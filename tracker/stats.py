@@ -5,6 +5,15 @@ def latest_observed_at(rows):
     return max((r["observed_at"] for r in rows), default=None)
 
 
+def cheapest_leg_over_time(rows, direction):
+    """Najnižšia cena danej nohy pri každom meraní: [(observed_at, min_price), ...]."""
+    by_ts = defaultdict(list)
+    for r in rows:
+        if r["direction"] == direction:
+            by_ts[r["observed_at"]].append(r["price"])
+    return [(ts, min(by_ts[ts])) for ts in sorted(by_ts)]
+
+
 def price_series(rows, direction):
     series = defaultdict(list)
     for r in sorted(rows, key=lambda x: x["observed_at"]):

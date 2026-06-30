@@ -11,10 +11,10 @@ _COLORWAY = ["#3B82F6", "#F59E0B", "#60A5FA", "#FBBF24", "#93C5FD",
 _AMBER = "#F59E0B"
 
 
-def _style(fig, title):
+def _style(fig, title=None):
     fig.update_layout(
         template="plotly_dark",
-        title=dict(text=title, font=dict(size=17, family="Fira Sans")),
+        title=dict(text=title or "", font=dict(size=17, family="Fira Sans")),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Fira Sans, sans-serif", color="#CBD5E1", size=13),
@@ -31,14 +31,20 @@ def _style(fig, title):
 
 
 def _price_evolution_fig(rows):
+    """Dve prehľadné čiary: najlacnejší odlet a najlacnejší návrat v čase."""
     fig = go.Figure()
-    for direction, label in (("OUT", "VIE→EFL"), ("RET", "EFL→VIE")):
-        for flight_date, points in sorted(stats.price_series(rows, direction).items()):
-            xs = [p[0] for p in points]
-            ys = [p[1] for p in points]
-            fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines+markers",
-                                     name=f"{label} {flight_date}"))
-    return _style(fig, "Vývoj ceny v čase")
+    legs = (
+        ("OUT", "Najlacnejší odlet (VIE→EFL)", "#3B82F6"),
+        ("RET", "Najlacnejší návrat (EFL→VIE)", "#F59E0B"),
+    )
+    for direction, label, color in legs:
+        series = stats.cheapest_leg_over_time(rows, direction)
+        xs = [s[0] for s in series]
+        ys = [s[1] for s in series]
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="lines+markers", name=label,
+            line=dict(width=3, color=color), marker=dict(size=6, color=color)))
+    return _style(fig)
 
 
 def _best_over_time_fig(rows):
@@ -51,7 +57,7 @@ def _best_over_time_fig(rows):
         marker=dict(color=_AMBER, size=7),
         fill="tozeroy", fillcolor="rgba(245,158,11,0.10)",
     ))
-    fig = _style(fig, "Najlacnejší round-trip v čase")
+    fig = _style(fig)
     fig.update_layout(showlegend=False)
     return fig
 
@@ -143,8 +149,9 @@ h1 { font-size: 30px; font-weight: 700; margin: 6px 0 4px; color: #F8FAFC; }
 .kpi-sub { font-size: 13px; color: #CBD5E1; font-family: 'Fira Code', monospace; }
 section { background: rgba(15,23,42,0.55); border: 1px solid rgba(148,163,184,0.12);
   border-radius: 18px; padding: 20px 22px; margin-bottom: 24px; }
-h2 { font-size: 16px; font-weight: 600; color: #F1F5F9; margin: 0 0 14px;
+h2 { font-size: 16px; font-weight: 600; color: #F1F5F9; margin: 0 0 4px;
   letter-spacing: .02em; }
+.caption { color: #94A3B8; font-size: 13px; margin: 0 0 14px; }
 table.combos { width: 100%; border-collapse: collapse; font-size: 14px; }
 table.combos th { text-align: left; color: #94A3B8; font-weight: 600;
   font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
@@ -198,10 +205,12 @@ def build_report_html(rows):
   </section>
   <section>
     <h2>Vývoj ceny v čase</h2>
+    <p class='caption'>Najnižšia cena odletu a návratu pri každom meraní — klesá alebo stúpa?</p>
     {evolution}
   </section>
   <section>
     <h2>Najlacnejší round-trip v čase</h2>
+    <p class='caption'>Najlacnejšia možná kombinácia tam + späť spolu.</p>
     {best}
   </section>
   <footer>Dáta: services-api.ryanair.com · generované lokálne, bez LLM</footer>
