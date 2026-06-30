@@ -47,9 +47,9 @@ def _price_evolution_fig(rows):
     return _style(fig)
 
 
-def _best_over_time_fig(rows):
+def _best_over_time_fig(rows, min_nights, max_nights):
     series = stats.cheapest_roundtrip_over_time(
-        rows, min_nights=config.MIN_NIGHTS, max_nights=config.MAX_NIGHTS)
+        rows, min_nights=min_nights, max_nights=max_nights)
     xs = [s[0] for s in series]
     # reálny odhad pre PERSONS osôb + fixné doplnky → porovnateľné s referenciou
     ys = [stats.total_with_extras(s[1], config.PERSONS, config.EXTRAS_EUR) for s in series]
@@ -71,19 +71,20 @@ def _best_over_time_fig(rows):
     return fig
 
 
-def _chart_html(fig, with_js):
+def _chart_html(fig):
+    # plotly.js sa načíta raz v <head>, takže tu nikdy nevkladáme knižnicu
     return fig.to_html(
         full_html=False,
-        include_plotlyjs="cdn" if with_js else False,
+        include_plotlyjs=False,
         default_width="100%",
         default_height="380px",
         config={"displayModeBar": False, "responsive": True},
     )
 
 
-def _kpi_cards_html(rows):
+def _kpi_cards_html(rows, min_nights, max_nights):
     combos = stats.cheapest_roundtrip_now(
-        rows, min_nights=config.MIN_NIGHTS, max_nights=config.MAX_NIGHTS)
+        rows, min_nights=min_nights, max_nights=max_nights)
     runs = len({r["observed_at"] for r in rows})
 
     def card(label, value, sub, tone=""):
@@ -123,9 +124,9 @@ def _kpi_cards_html(rows):
     return f"<div class='kpi-grid'>{''.join(cards)}</div>"
 
 
-def _combos_table_html(rows):
+def _combos_table_html(rows, min_nights, max_nights):
     combos = stats.cheapest_roundtrip_now(
-        rows, min_nights=config.MIN_NIGHTS, max_nights=config.MAX_NIGHTS)
+        rows, min_nights=min_nights, max_nights=max_nights)
     head = ("<tr><th>Odlet (VIE→EFL)</th><th>Cena tam</th>"
             "<th>Návrat (EFL→VIE)</th><th>Cena späť</th><th>Nocí</th><th>Spolu</th></tr>")
     body = "".join(
@@ -156,6 +157,16 @@ header { margin-bottom: 28px; }
   text-transform: uppercase; font-size: 12px; }
 h1 { font-size: 30px; font-weight: 700; margin: 6px 0 4px; color: #F8FAFC; }
 .updated { color: #94A3B8; font-size: 13px; font-family: 'Fira Code', monospace; }
+.toggle-wrap { display: flex; align-items: center; gap: 12px; margin: 22px 0 4px; }
+.toggle-label { color: #94A3B8; font-size: 13px; }
+.toggle { display: inline-flex; gap: 4px; background: rgba(30,41,59,0.6);
+  border: 1px solid rgba(148,163,184,0.15); border-radius: 12px; padding: 4px; }
+.toggle-btn { cursor: pointer; border: 0; background: transparent; color: #94A3B8;
+  font: 600 13px 'Fira Sans', sans-serif; padding: 8px 16px; border-radius: 9px;
+  transition: background .2s, color .2s; }
+.toggle-btn.active { background: #3B82F6; color: #fff; }
+.toggle-btn:hover:not(.active) { color: #E2E8F0; }
+[hidden] { display: none !important; }
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 16px; margin: 24px 0 32px; }
 .kpi { background: rgba(30,41,59,0.55); border: 1px solid rgba(148,163,184,0.12);
@@ -195,6 +206,48 @@ footer { color: #64748B; font-size: 12px; text-align: center; margin-top: 32px;
 """
 
 
+def _preset_block(rows, preset, index):
+    mn, mx = preset["min_nights"], preset["max_nights"]
+    kpis = _kpi_cards_html(rows, mn, mx)
+    table = _combos_table_html(rows, mn, mx)
+    best = _chart_html(_best_over_time_fig(rows, mn, mx))
+    hidden = "" if index == 0 else " hidden"
+    return f"""<div class='preset' data-preset='{index}'{hidden}>
+  {kpis}
+  <section>
+    <h2>Najlacnejší round-trip teraz</h2>
+    <p class='caption'>Ceny za 1 osobu (samotná letenka), pobyt {html.escape(preset['label'])}. Doplnky (batožina + miestenky {config.EXTRAS_EUR:.0f} €) sa rátajú zvlášť v reálnom odhade hore.</p>
+    {table}
+  </section>
+  <section>
+    <h2>Najlacnejší round-trip v čase</h2>
+    <p class='caption'>Reálny odhad pre {config.PERSONS} osoby vrátane doplnkov ({html.escape(preset['label'])}), oproti referencii {config.REFERENCE_PRICE_EUR:.0f} € spred 2 rokov.</p>
+    {best}
+  </section>
+</div>"""
+
+
+_PLOTLY_JS = "<script src='https://cdn.plot.ly/plotly-2.35.2.min.js' charset='utf-8'></script>"
+
+_TOGGLE_JS = """<script>
+(function () {
+  var btns = document.querySelectorAll('.toggle-btn');
+  var panels = document.querySelectorAll('.preset');
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var t = b.dataset.target;
+      btns.forEach(function (x) { x.classList.toggle('active', x.dataset.target === t); });
+      panels.forEach(function (p) { p.hidden = (p.dataset.preset !== t); });
+      if (window.Plotly) {
+        document.querySelectorAll("[data-preset='" + t + "'] .plotly-graph-div")
+          .forEach(function (g) { window.Plotly.Plots.resize(g); });
+      }
+    });
+  });
+})();
+</script>"""
+
+
 def build_report_html(rows):
     if not rows:
         return (f"<!DOCTYPE html><html lang='sk'><head><meta charset='utf-8'>"
@@ -205,10 +258,16 @@ def build_report_html(rows):
                 f"<section><p class='empty'>Zatiaľ žiadne dáta</p></section></div></body></html>")
 
     updated = stats.latest_observed_at(rows)
-    kpis = _kpi_cards_html(rows)
-    evolution = _chart_html(_price_evolution_fig(rows), with_js=True)
-    best = _chart_html(_best_over_time_fig(rows), with_js=False)
-    table = _combos_table_html(rows)
+    evolution = _chart_html(_price_evolution_fig(rows))
+
+    buttons = "".join(
+        f"<button class='toggle-btn{' active' if i == 0 else ''}' data-target='{i}'>"
+        f"{html.escape(p['label'])}</button>"
+        for i, p in enumerate(config.STAY_PRESETS)
+    )
+    toggle = f"<div class='toggle' role='tablist'>{buttons}</div>"
+    blocks = "".join(
+        _preset_block(rows, p, i) for i, p in enumerate(config.STAY_PRESETS))
 
     return f"""<!DOCTYPE html>
 <html lang='sk'>
@@ -216,6 +275,7 @@ def build_report_html(rows):
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
 <title>Ryanair VIE↔EFL tracker</title>
+{_PLOTLY_JS}
 <style>{_CSS}</style>
 </head>
 <body>
@@ -225,24 +285,16 @@ def build_report_html(rows):
     <h1>Viedeň ↔ Kefalonia</h1>
     <div class='updated'>Posledná aktualizácia: {html.escape(str(updated))}</div>
   </header>
-  {kpis}
-  <section>
-    <h2>Najlacnejší round-trip teraz</h2>
-    <p class='caption'>Ceny za 1 osobu (samotná letenka), pobyt {config.MIN_NIGHTS}–{config.MAX_NIGHTS} nocí. Doplnky (batožina + miestenky {config.EXTRAS_EUR:.0f} €) sa rátajú zvlášť v reálnom odhade hore.</p>
-    {table}
-  </section>
+  <div class='toggle-wrap'><span class='toggle-label'>Dĺžka pobytu:</span> {toggle}</div>
+  {blocks}
   <section>
     <h2>Vývoj ceny v čase</h2>
-    <p class='caption'>Najnižšia cena odletu a návratu (za 1 os.) pri každom meraní — klesá alebo stúpa?</p>
+    <p class='caption'>Najnižšia cena odletu a návratu (za 1 os.) pri každom meraní — nezávislé od dĺžky pobytu.</p>
     {evolution}
-  </section>
-  <section>
-    <h2>Najlacnejší round-trip v čase</h2>
-    <p class='caption'>Reálny odhad pre {config.PERSONS} osoby vrátane doplnkov, oproti referencii {config.REFERENCE_PRICE_EUR:.0f} € spred 2 rokov.</p>
-    {best}
   </section>
   <footer>Dáta: services-api.ryanair.com · generované lokálne, bez LLM</footer>
 </div>
+{_TOGGLE_JS}
 </body>
 </html>"""
 

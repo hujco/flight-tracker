@@ -4,9 +4,14 @@ YEAR = 2026
 MONTH = 9
 CURRENCY = "EUR"
 
-# Dĺžka pobytu pre round-trip: počet nocí medzi odletom a návratom (vrátane hraníc)
-MIN_NIGHTS = 5
-MAX_NIGHTS = 10
+# Dĺžka pobytu pre round-trip: prepínateľné presety (počet nocí, vrátane hraníc)
+STAY_PRESETS = [
+    {"label": "5–7 nocí", "min_nights": 5, "max_nights": 7},
+    {"label": "7–10 nocí", "min_nights": 7, "max_nights": 10},
+]
+# predvolený rozsah (prvý preset) — pre prípadné iné použitie (napr. alert)
+MIN_NIGHTS = STAY_PRESETS[0]["min_nights"]
+MAX_NIGHTS = STAY_PRESETS[0]["max_nights"]
 
 # Reálny náklad: počet osôb + fixné doplnky (batožina + miestenky)
 PERSONS = 2
