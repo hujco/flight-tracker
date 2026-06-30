@@ -51,15 +51,23 @@ def _best_over_time_fig(rows):
     series = stats.cheapest_roundtrip_over_time(
         rows, min_nights=config.MIN_NIGHTS, max_nights=config.MAX_NIGHTS)
     xs = [s[0] for s in series]
-    ys = [s[1] for s in series]
+    # reálny odhad pre PERSONS osôb + fixné doplnky → porovnateľné s referenciou
+    ys = [stats.total_with_extras(s[1], config.PERSONS, config.EXTRAS_EUR) for s in series]
     fig = go.Figure(go.Scatter(
-        x=xs, y=ys, mode="lines+markers", name="Najlacnejší round-trip",
+        x=xs, y=ys, mode="lines+markers",
+        name=f"Reálny odhad ({config.PERSONS} os.)",
         line=dict(color=_AMBER, width=3),
         marker=dict(color=_AMBER, size=7),
         fill="tozeroy", fillcolor="rgba(245,158,11,0.10)",
     ))
     fig = _style(fig)
     fig.update_layout(showlegend=False)
+    if xs:
+        fig.add_hline(
+            y=config.REFERENCE_PRICE_EUR, line_dash="dash", line_color="#94A3B8",
+            annotation_text=f"pred 2 r.: {config.REFERENCE_PRICE_EUR:.0f} €",
+            annotation_position="top left",
+            annotation_font_color="#CBD5E1")
     return fig
 
 
@@ -76,14 +84,10 @@ def _chart_html(fig, with_js):
 def _kpi_cards_html(rows):
     combos = stats.cheapest_roundtrip_now(
         rows, min_nights=config.MIN_NIGHTS, max_nights=config.MAX_NIGHTS)
-    latest = stats.latest_observed_at(rows)
-    latest_rows = [r for r in rows if r["observed_at"] == latest]
-    out = [r for r in latest_rows if r["direction"] == "OUT"]
-    ret = [r for r in latest_rows if r["direction"] == "RET"]
     runs = len({r["observed_at"] for r in rows})
 
-    def card(label, value, sub, accent=False):
-        cls = "kpi kpi-accent" if accent else "kpi"
+    def card(label, value, sub, tone=""):
+        cls = "kpi" + (f" kpi-{tone}" if tone else "")
         return (f"<div class='{cls}'><div class='kpi-label'>{html.escape(label)}</div>"
                 f"<div class='kpi-value'>{value}</div>"
                 f"<div class='kpi-sub'>{html.escape(sub)}</div></div>")
@@ -91,17 +95,30 @@ def _kpi_cards_html(rows):
     cards = []
     if combos:
         b = combos[0]
+        base_pp = b["total"]
+        total_2p = stats.total_with_extras(base_pp, config.PERSONS, config.EXTRAS_EUR)
+        diff = round(total_2p - config.REFERENCE_PRICE_EUR, 2)
+
+        # Hlavná karta: reálny odhad pre 2 os. + verdikt voči referencii
+        if diff <= 0:
+            tone, verdict = "good", f"dobrá cena · {diff:.0f} € vs {config.REFERENCE_PRICE_EUR:.0f} €"
+        else:
+            tone, verdict = "bad", f"+{diff:.0f} € oproti {config.REFERENCE_PRICE_EUR:.0f} € (pred 2 r.) · počkaj"
         cards.append(card(
-            "Najlacnejší round-trip", f"{b['total']:.0f} €",
-            f"{b['out_date']} → {b['ret_date']} · {b['nights']} nocí", accent=True))
-    if out:
-        co = min(out, key=lambda r: r["price"])
-        cards.append(card("Najlacnejší odlet", f"{co['price']:.0f} €",
-                          f"VIE→EFL · {co['flight_date']}"))
-    if ret:
-        cr = min(ret, key=lambda r: r["price"])
-        cards.append(card("Najlacnejší návrat", f"{cr['price']:.0f} €",
-                          f"EFL→VIE · {cr['flight_date']}"))
+            f"Reálny odhad ({config.PERSONS} os. + batožina)", f"{total_2p:.0f} €",
+            verdict, tone=tone))
+
+        # Pohľad za 1 osobu (čistá letenka) vs referencia za 1 os.
+        cards.append(card(
+            "Letenka / os. (tam+späť)", f"{base_pp:.0f} €",
+            f"pred 2 r. ~{config.REFERENCE_PER_PERSON_EUR:.0f} € · "
+            f"{b['out_date']} → {b['ret_date']} · {b['nights']} nocí",
+            tone="accent"))
+
+        cards.append(card(
+            "Doplnky (fixné)", f"{config.EXTRAS_EUR:.0f} €",
+            f"kufor {config.BAGGAGE_PER_LEG_EUR:.0f} € ×2 + miestenky {config.SEATS_EUR:.0f} €"))
+
     cards.append(card("Záznamov / meraní", f"{len(rows)}", f"{runs} behov"))
     return f"<div class='kpi-grid'>{''.join(cards)}</div>"
 
@@ -145,11 +162,17 @@ h1 { font-size: 30px; font-weight: 700; margin: 6px 0 4px; color: #F8FAFC; }
   border-radius: 16px; padding: 18px 20px; backdrop-filter: blur(6px); }
 .kpi-accent { border-color: rgba(245,158,11,0.45);
   background: linear-gradient(180deg, rgba(245,158,11,0.12), rgba(30,41,59,0.55)); }
+.kpi-good { border-color: rgba(34,197,94,0.5);
+  background: linear-gradient(180deg, rgba(34,197,94,0.14), rgba(30,41,59,0.55)); }
+.kpi-bad { border-color: rgba(239,68,68,0.5);
+  background: linear-gradient(180deg, rgba(239,68,68,0.14), rgba(30,41,59,0.55)); }
 .kpi-label { font-size: 12px; color: #94A3B8; text-transform: uppercase;
   letter-spacing: .05em; }
 .kpi-value { font-size: 30px; font-weight: 700; font-family: 'Fira Code', monospace;
   color: #F8FAFC; margin: 6px 0 2px; }
 .kpi-accent .kpi-value { color: #FBBF24; }
+.kpi-good .kpi-value { color: #4ADE80; }
+.kpi-bad .kpi-value { color: #F87171; }
 .kpi-sub { font-size: 13px; color: #CBD5E1; font-family: 'Fira Code', monospace; }
 section { background: rgba(15,23,42,0.55); border: 1px solid rgba(148,163,184,0.12);
   border-radius: 18px; padding: 20px 22px; margin-bottom: 24px; }
@@ -205,16 +228,17 @@ def build_report_html(rows):
   {kpis}
   <section>
     <h2>Najlacnejší round-trip teraz</h2>
+    <p class='caption'>Ceny za 1 osobu (samotná letenka), pobyt {config.MIN_NIGHTS}–{config.MAX_NIGHTS} nocí. Doplnky (batožina + miestenky {config.EXTRAS_EUR:.0f} €) sa rátajú zvlášť v reálnom odhade hore.</p>
     {table}
   </section>
   <section>
     <h2>Vývoj ceny v čase</h2>
-    <p class='caption'>Najnižšia cena odletu a návratu pri každom meraní — klesá alebo stúpa?</p>
+    <p class='caption'>Najnižšia cena odletu a návratu (za 1 os.) pri každom meraní — klesá alebo stúpa?</p>
     {evolution}
   </section>
   <section>
     <h2>Najlacnejší round-trip v čase</h2>
-    <p class='caption'>Najlacnejšia možná kombinácia tam + späť spolu.</p>
+    <p class='caption'>Reálny odhad pre {config.PERSONS} osoby vrátane doplnkov, oproti referencii {config.REFERENCE_PRICE_EUR:.0f} € spred 2 rokov.</p>
     {best}
   </section>
   <footer>Dáta: services-api.ryanair.com · generované lokálne, bez LLM</footer>

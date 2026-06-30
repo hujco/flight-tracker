@@ -48,6 +48,13 @@ def test_night_range_filters_max():
     assert len(stats.cheapest_roundtrip_now(rows, min_nights=5, max_nights=20)) == 1
 
 
+def test_total_with_extras():
+    # 181.80 za 1 os. (tam+spat), 2 osoby, extras 67.78 -> 431.38
+    assert stats.total_with_extras(181.80, 2, 67.78) == 431.38
+    # 1 osoba bez doplnkov = zaklad
+    assert stats.total_with_extras(100.0, 1, 0) == 100.0
+
+
 def test_cheapest_roundtrip_over_time():
     series = stats.cheapest_roundtrip_over_time(ROWS)
     # 14:00: OUT 35 + RET 98 (RET 20.9 je pred odletom -> neplatny) = 133

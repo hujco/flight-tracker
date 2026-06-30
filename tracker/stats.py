@@ -6,6 +6,11 @@ def _nights_between(out_date, ret_date):
     return (date.fromisoformat(ret_date) - date.fromisoformat(out_date)).days
 
 
+def total_with_extras(base_total, persons, extras):
+    """Reálny náklad: základ za 1 os. × počet osôb + fixné doplnky (batožina, miestenky)."""
+    return round(base_total * persons + extras, 2)
+
+
 def latest_observed_at(rows):
     return max((r["observed_at"] for r in rows), default=None)
 
