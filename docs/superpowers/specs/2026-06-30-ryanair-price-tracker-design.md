@@ -49,15 +49,21 @@ Skripty komunikujú výhradne cez SQLite súbor — dajú sa spúšťať a testo
 
 Ryanair neoficiálny (ale roky stabilný) JSON endpoint, žiadny API kľúč:
 
-- **`https://www.ryanair.com/api/booking/v4/availability`** — ceny pre rozsah dní danej trasy.
-  Parametre okrem iného: `Origin`, `Destination`, `DateOut`, `FlexDaysOut`/`FlexDaysBeforeOut`
-  (rozsah ±dní), `ADT=1` (1 dospelý), `RoundTrip=false`, `ToUs=AGREED`.
-  Cez celý september sa pokryje viacerými volaniami (FlexDays má strop ~6 dní na stranu).
-- Pomocný/overovací: `https://services-api.ryanair.com/farfnd/v4/oneWayFares` (vracia len
-  najlacnejší jeden let za okno — **nestačí** na flexibilné okno, slúži len na sanity-check).
+- **`https://services-api.ryanair.com/farfnd/v4/oneWayFares`** — vracia lety danej trasy
+  v okne dátumov. Parametre: `departureAirportIataCode`, `arrivalAirportIataCode`,
+  `outboundDepartureDateFrom`, `outboundDepartureDateTo`, `currency=EUR`.
+  Pri okne `from == to == konkrétny deň` vráti let(y) toho dňa, alebo prázdne pole ak nelieta.
+  **Stratégia:** pre každý smer prejdeme všetkých 30 dní septembra, 1 volanie na deň →
+  ~60 malých volaní za hodinový beh. Tým pokryjeme celé flexibilné okno spoľahlivo.
 
-Slušné správanie: rozumný `User-Agent`, len nevyhnutné requesty za beh (jeden hodinový beh =
-zopár volaní), žiadne paralelné búšenie.
+- **Zavrhnuté:** `booking/v4/availability` — vracia `{"message":"Availability declined"}`
+  bez platnej session cookie z webu. Príliš krehké, nepoužívame.
+
+Obmedzenie: `oneWayFares` **nevracia počet voľných sedadiel** → stĺpec `seats_left` ostáva
+NULL (ponechaný v schéme pre prípadné budúce rozšírenie).
+
+Slušné správanie: rozumný `User-Agent`, sekvenčné volania (žiadne paralelné búšenie),
+beh raz za hodinu.
 
 ## Dátový model
 
@@ -73,7 +79,7 @@ Jedna tabuľka, append-only časový rad. Round-trip ceny sa NEpočítajú pri u
 | `flight_date` | TEXT (date) | dátum letu |
 | `flight_number` | TEXT | napr. FR7310 |
 | `price` | REAL | cena za 1 osobu v EUR |
-| `seats_left` | INTEGER | zostávajúce sedadlá, ak endpoint vráti (inak NULL) |
+| `seats_left` | INTEGER | vždy NULL pri `oneWayFares` (endpoint to nevracia); ponechané do budúcna |
 
 Index na `(direction, flight_date, observed_at)` pre rýchle grafy.
 
