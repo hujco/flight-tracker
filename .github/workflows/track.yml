@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: '0 * * * *'   # každú hodinu (UTC; GitHub môže o pár minút oneskoriť)
   workflow_dispatch: {}    # manuálne spustenie z GitHub UI / gh
+  push:
+    branches: [main]       # pri každej zmene kódu → prebuduj report
+    paths-ignore:
+      - 'prices.db'        # commit dát botom (GITHUB_TOKEN) workflow ani tak nespúšťa
 
 # scheduled workflows bežia len na default branch (main)
 permissions:
