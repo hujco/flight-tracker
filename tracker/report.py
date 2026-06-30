@@ -1,9 +1,22 @@
 import html
+from datetime import date, datetime
 from pathlib import Path
 
 import plotly.graph_objects as go
 
 from . import config, stats
+
+
+def _fmt_date(iso):
+    """'2026-09-14' -> '14.09.2026' (EU)."""
+    d = date.fromisoformat(iso)
+    return f"{d.day:02d}.{d.month:02d}.{d.year}"
+
+
+def _fmt_dt(iso):
+    """'2026-06-30T14:00' -> '30.06.2026 14:00' (EU)."""
+    dt = datetime.fromisoformat(iso)
+    return f"{dt.day:02d}.{dt.month:02d}.{dt.year} {dt.hour:02d}:{dt.minute:02d}"
 
 # Brand palette (dark dashboard: blue data + amber highlight)
 _COLORWAY = ["#3B82F6", "#F59E0B", "#60A5FA", "#FBBF24", "#93C5FD",
@@ -24,7 +37,8 @@ def _style(fig, title=None):
         hovermode="x unified",
     )
     fig.update_xaxes(gridcolor="rgba(148,163,184,0.12)", zeroline=False,
-                     title_font=dict(size=12))
+                     title_font=dict(size=12),
+                     tickformat="%d.%m. %H:%M", hoverformat="%d.%m.%Y %H:%M")
     fig.update_yaxes(gridcolor="rgba(148,163,184,0.12)", zeroline=False,
                      ticksuffix=" €", title_font=dict(size=12))
     return fig
@@ -113,7 +127,7 @@ def _kpi_cards_html(rows, min_nights, max_nights):
         cards.append(card(
             "Letenka / os. (tam+späť)", f"{base_pp:.0f} €",
             f"pred 2 r. ~{config.REFERENCE_PER_PERSON_EUR:.0f} € · "
-            f"{b['out_date']} → {b['ret_date']} · {b['nights']} nocí",
+            f"{_fmt_date(b['out_date'])} → {_fmt_date(b['ret_date'])} · {b['nights']} nocí",
             tone="accent"))
 
         cards.append(card(
@@ -131,8 +145,8 @@ def _combos_table_html(rows, min_nights, max_nights):
             "<th>Návrat (EFL→VIE)</th><th>Cena späť</th><th>Nocí</th><th>Spolu</th></tr>")
     body = "".join(
         f"<tr class='{ 'best' if i == 0 else '' }'>"
-        f"<td>{html.escape(c['out_date'])}</td><td>{c['out_price']:.2f} €</td>"
-        f"<td>{html.escape(c['ret_date'])}</td><td>{c['ret_price']:.2f} €</td>"
+        f"<td>{_fmt_date(c['out_date'])}</td><td>{c['out_price']:.2f} €</td>"
+        f"<td>{_fmt_date(c['ret_date'])}</td><td>{c['ret_price']:.2f} €</td>"
         f"<td>{c['nights']}</td>"
         f"<td class='total'>{c['total']:.2f} €</td></tr>"
         for i, c in enumerate(combos)
@@ -283,7 +297,7 @@ def build_report_html(rows):
   <header>
     <div class='eyebrow'>Ryanair price tracker · september 2026</div>
     <h1>Viedeň ↔ Kefalonia</h1>
-    <div class='updated'>Posledná aktualizácia: {html.escape(str(updated))}</div>
+    <div class='updated'>Posledná aktualizácia: {html.escape(_fmt_dt(updated))}</div>
   </header>
   <div class='toggle-wrap'><span class='toggle-label'>Dĺžka pobytu:</span> {toggle}</div>
   {blocks}
