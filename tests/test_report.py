@@ -2,7 +2,8 @@ from tracker import report
 
 ROWS = [
     {"observed_at": "2026-06-30T14:00", "direction": "OUT", "flight_date": "2026-09-26", "flight_number": "FR7310", "price": 35.0},
-    {"observed_at": "2026-06-30T14:00", "direction": "RET", "flight_date": "2026-09-30", "flight_number": "FR7311", "price": 98.0},
+    # navrat 3.10. = 7 noci -> v platnom rozsahu 5-10 noci (config)
+    {"observed_at": "2026-06-30T14:00", "direction": "RET", "flight_date": "2026-10-03", "flight_number": "FR7311", "price": 98.0},
 ]
 
 

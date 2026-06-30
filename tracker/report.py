@@ -3,7 +3,7 @@ from pathlib import Path
 
 import plotly.graph_objects as go
 
-from . import stats
+from . import config, stats
 
 # Brand palette (dark dashboard: blue data + amber highlight)
 _COLORWAY = ["#3B82F6", "#F59E0B", "#60A5FA", "#FBBF24", "#93C5FD",
@@ -48,7 +48,8 @@ def _price_evolution_fig(rows):
 
 
 def _best_over_time_fig(rows):
-    series = stats.cheapest_roundtrip_over_time(rows)
+    series = stats.cheapest_roundtrip_over_time(
+        rows, min_nights=config.MIN_NIGHTS, max_nights=config.MAX_NIGHTS)
     xs = [s[0] for s in series]
     ys = [s[1] for s in series]
     fig = go.Figure(go.Scatter(
@@ -73,7 +74,8 @@ def _chart_html(fig, with_js):
 
 
 def _kpi_cards_html(rows):
-    combos = stats.cheapest_roundtrip_now(rows)
+    combos = stats.cheapest_roundtrip_now(
+        rows, min_nights=config.MIN_NIGHTS, max_nights=config.MAX_NIGHTS)
     latest = stats.latest_observed_at(rows)
     latest_rows = [r for r in rows if r["observed_at"] == latest]
     out = [r for r in latest_rows if r["direction"] == "OUT"]
@@ -91,7 +93,7 @@ def _kpi_cards_html(rows):
         b = combos[0]
         cards.append(card(
             "Najlacnejší round-trip", f"{b['total']:.0f} €",
-            f"{b['out_date']} → {b['ret_date']}", accent=True))
+            f"{b['out_date']} → {b['ret_date']} · {b['nights']} nocí", accent=True))
     if out:
         co = min(out, key=lambda r: r["price"])
         cards.append(card("Najlacnejší odlet", f"{co['price']:.0f} €",
@@ -105,13 +107,15 @@ def _kpi_cards_html(rows):
 
 
 def _combos_table_html(rows):
-    combos = stats.cheapest_roundtrip_now(rows)
+    combos = stats.cheapest_roundtrip_now(
+        rows, min_nights=config.MIN_NIGHTS, max_nights=config.MAX_NIGHTS)
     head = ("<tr><th>Odlet (VIE→EFL)</th><th>Cena tam</th>"
-            "<th>Návrat (EFL→VIE)</th><th>Cena späť</th><th>Spolu</th></tr>")
+            "<th>Návrat (EFL→VIE)</th><th>Cena späť</th><th>Nocí</th><th>Spolu</th></tr>")
     body = "".join(
         f"<tr class='{ 'best' if i == 0 else '' }'>"
         f"<td>{html.escape(c['out_date'])}</td><td>{c['out_price']:.2f} €</td>"
         f"<td>{html.escape(c['ret_date'])}</td><td>{c['ret_price']:.2f} €</td>"
+        f"<td>{c['nights']}</td>"
         f"<td class='total'>{c['total']:.2f} €</td></tr>"
         for i, c in enumerate(combos)
     )

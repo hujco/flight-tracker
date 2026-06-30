@@ -4,6 +4,10 @@ YEAR = 2026
 MONTH = 9
 CURRENCY = "EUR"
 
+# Dĺžka pobytu pre round-trip: počet nocí medzi odletom a návratom (vrátane hraníc)
+MIN_NIGHTS = 5
+MAX_NIGHTS = 10
+
 # OUT = tam (VIE->EFL), RET = spat (EFL->VIE)
 LEGS = [
     {"direction": "OUT", "origin": "VIE", "destination": "EFL"},
