@@ -5,9 +5,11 @@ MONTH = 9
 CURRENCY = "EUR"
 
 # Dĺžka pobytu pre round-trip: prepínateľné presety (počet nocí, vrátane hraníc)
+# Trasa VIE↔EFL lieta len Pi/So/Po → realistické presné dĺžky pobytu
 STAY_PRESETS = [
-    {"label": "5–7 nocí", "min_nights": 5, "max_nights": 7},
-    {"label": "7–10 nocí", "min_nights": 7, "max_nights": 10},
+    {"label": "7 nocí", "min_nights": 7, "max_nights": 7},
+    {"label": "9 nocí", "min_nights": 9, "max_nights": 9},
+    {"label": "10 nocí", "min_nights": 10, "max_nights": 10},
 ]
 # predvolený rozsah (prvý preset) — pre prípadné iné použitie (napr. alert)
 MIN_NIGHTS = STAY_PRESETS[0]["min_nights"]
