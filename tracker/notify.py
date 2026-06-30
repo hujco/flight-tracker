@@ -106,11 +106,23 @@ def maybe_notify(rows, session=None):
     if info is None:
         return False, "žiadne nové minimum pod cieľom"
     token = os.environ.get("TELEGRAM_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID") or config.TELEGRAM_CHAT_ID
     if not token or not chat_id:
         return False, (f"nové minimum {info['price']:.0f} € pod cieľom, ale chýba "
-                       "TELEGRAM_TOKEN/TELEGRAM_CHAT_ID — alert preskočený")
+                       "TELEGRAM_TOKEN — alert preskočený")
     text = format_message(
         info, config.REFERENCE_PER_PERSON_EUR, config.ALERT_TARGET_EUR, config.REPORT_URL)
     send_telegram(token, chat_id, text, session=session)
     return True, f"poslaný alert: {info['price']:.0f} €/os"
+
+
+def send_test(session=None):
+    """Pošli skúšobnú správu (na overenie že Telegram funguje)."""
+    token = os.environ.get("TELEGRAM_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID") or config.TELEGRAM_CHAT_ID
+    if not token or not chat_id:
+        return False, "chýba TELEGRAM_TOKEN"
+    send_telegram(token, chat_id,
+                  "✅ Test: Flight tracker alert funguje.\n" + config.REPORT_URL,
+                  session=session)
+    return True, "testovací alert poslaný"

@@ -3,7 +3,12 @@ name: track
 on:
   schedule:
     - cron: '0 * * * *'   # každú hodinu (UTC; GitHub môže o pár minút oneskoriť)
-  workflow_dispatch: {}    # manuálne spustenie z GitHub UI / gh
+  workflow_dispatch:        # manuálne spustenie z GitHub UI / gh
+    inputs:
+      test_alert:
+        description: 'Poslať testovací Telegram alert'
+        type: boolean
+        default: false
   push:
     branches: [main]       # pri každej zmene kódu → prebuduj report
     paths-ignore:
@@ -35,7 +40,7 @@ jobs:
       - name: Fetch fares + build report + maybe alert
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALERT_TEST: ${{ inputs.test_alert }}
         run: python -m tracker.run
 
       - name: Commit price history

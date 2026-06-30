@@ -28,6 +28,8 @@ INCLUDE_EXTRAS = False
 # nové minimum A zároveň je ≤ ALERT_TARGET_EUR. Creds idú cez env (GitHub Secrets).
 ALERT_TARGET_EUR = 130.0
 REPORT_URL = "https://hujco.github.io/flight-tracker/"
+# chat id nie je tajné (bez tokenu sa s ním nedá nič) → môže byť tu; token ostáva v Secrets
+TELEGRAM_CHAT_ID = "8804095194"
 
 # Referencia spred 2 rokov: celá suma za 2 osoby vrátane batožiny a miesteniek
 REFERENCE_PRICE_EUR = 301.0

@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime
 
 from . import collect, config, db, notify, report
@@ -24,6 +25,13 @@ def main():
     rows = db.all_rows(conn)
     report.write_report(rows, config.REPORT_PATH)
     logging.info("report written to %s (%d total rows)", config.REPORT_PATH, len(rows))
+
+    if os.environ.get("ALERT_TEST", "").lower() in ("1", "true", "yes"):
+        try:
+            _, msg = notify.send_test()
+            logging.info("notify test: %s", msg)
+        except Exception as exc:
+            logging.error("notify test failed: %s", exc)
 
     try:
         sent, msg = notify.maybe_notify(rows)
