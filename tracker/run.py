@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from . import collect, config, db, report
+from . import collect, config, db, notify, report
 
 
 def main():
@@ -24,6 +24,12 @@ def main():
     rows = db.all_rows(conn)
     report.write_report(rows, config.REPORT_PATH)
     logging.info("report written to %s (%d total rows)", config.REPORT_PATH, len(rows))
+
+    try:
+        sent, msg = notify.maybe_notify(rows)
+        logging.info("notify: %s", msg)
+    except Exception as exc:  # alert nesmie zhodiť beh
+        logging.error("notify failed: %s", exc)
 
 
 if __name__ == "__main__":

@@ -31,9 +31,27 @@ Odpojenie:
 
 > Nepoužívaj lokálny aj cloudový beh naraz nad tým istým repom — divergovala by `prices.db`.
 
+## Telegram alert pri dobrej cene
+`tracker/notify.py` po každom behu pošle Telegram správu, keď najlacnejšia
+letenka/os (naprieč `STAY_PRESETS`) klesne na **nové minimum** a zároveň je
+**≤ `ALERT_TARGET_EUR`** (default 130 €). Bez nového minima alebo nad cieľom
+nepošle nič (žiadny spam). Cena ≤ `REFERENCE_PER_PERSON_EUR` sa v správe
+označí ako „🔥 skvelá".
+
+Nastavenie (jednorazovo):
+1. V Telegrame napíš **@BotFather** → `/newbot` → získaš **bot token**.
+2. Napíš svojmu novému botovi hocičo (napr. „ahoj"), potom otvor
+   `https://api.telegram.org/bot<TOKEN>/getUpdates` → nájdi `chat.id`.
+3. V repo **Settings → Secrets and variables → Actions** pridaj:
+   - `TELEGRAM_TOKEN` = bot token
+   - `TELEGRAM_CHAT_ID` = tvoje chat id
+Workflow ich podá ako env; bez nich alert ticho spí, tracker beží ďalej.
+
+Cieľovú cenu zmeníš v `tracker/config.py` (`ALERT_TARGET_EUR`).
+
 ## Konfigurácia
-Trasu a okno zmeníš v `tracker/config.py` (LEGS, YEAR, MONTH, MIN/MAX_NIGHTS,
-PERSONS, EXTRAS_EUR, REFERENCE_PRICE_EUR).
+Trasu a okno zmeníš v `tracker/config.py` (LEGS, YEAR, MONTH, STAY_PRESETS,
+PERSONS, EXTRAS_EUR, INCLUDE_EXTRAS, REFERENCE_PRICE_EUR, ALERT_TARGET_EUR).
 
 ## Testy
     .venv/bin/python -m pytest -v
