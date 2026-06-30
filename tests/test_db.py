@@ -35,3 +35,9 @@ def test_all_rows_sorted_by_observed_at():
     ])
     rows = db.all_rows(conn)
     assert [r["observed_at"] for r in rows] == ["2026-06-30T14:00", "2026-06-30T15:00"]
+
+
+def test_connect_returns_row_factory_connection():
+    conn = db.connect(":memory:")
+    assert isinstance(conn, sqlite3.Connection)
+    assert conn.row_factory is sqlite3.Row
