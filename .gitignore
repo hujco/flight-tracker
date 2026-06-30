@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+report.html
+_site/
+flight-tracker.log
+launchd.out.log
+launchd.err.log
