@@ -65,11 +65,16 @@ def _best_over_time_fig(rows, min_nights, max_nights):
     series = stats.cheapest_roundtrip_over_time(
         rows, min_nights=min_nights, max_nights=max_nights)
     xs = [s[0] for s in series]
-    # reálny odhad pre PERSONS osôb + fixné doplnky → porovnateľné s referenciou
-    ys = [stats.total_with_extras(s[1], config.PERSONS, config.EXTRAS_EUR) for s in series]
+    if config.INCLUDE_EXTRAS:
+        # reálny odhad pre PERSONS osôb + fixné doplnky → voči 301 €
+        ys = [stats.total_with_extras(s[1], config.PERSONS, config.EXTRAS_EUR) for s in series]
+        ref, name = config.REFERENCE_PRICE_EUR, f"Reálny odhad ({config.PERSONS} os.)"
+    else:
+        # default: čistá letenka za 1 os. → voči ~117 € spred 2 rokov
+        ys = [s[1] for s in series]
+        ref, name = config.REFERENCE_PER_PERSON_EUR, "Letenka / os."
     fig = go.Figure(go.Scatter(
-        x=xs, y=ys, mode="lines+markers",
-        name=f"Reálny odhad ({config.PERSONS} os.)",
+        x=xs, y=ys, mode="lines+markers", name=name,
         line=dict(color=_AMBER, width=3),
         marker=dict(color=_AMBER, size=7),
         fill="tozeroy", fillcolor="rgba(245,158,11,0.10)",
@@ -78,8 +83,8 @@ def _best_over_time_fig(rows, min_nights, max_nights):
     fig.update_layout(showlegend=False)
     if xs:
         fig.add_hline(
-            y=config.REFERENCE_PRICE_EUR, line_dash="dash", line_color="#94A3B8",
-            annotation_text=f"pred 2 r.: {config.REFERENCE_PRICE_EUR:.0f} €",
+            y=ref, line_dash="dash", line_color="#94A3B8",
+            annotation_text=f"pred 2 r.: ~{ref:.0f} €",
             annotation_position="top left",
             annotation_font_color="#CBD5E1")
     return fig
@@ -111,28 +116,32 @@ def _kpi_cards_html(rows, min_nights, max_nights):
     if combos:
         b = combos[0]
         base_pp = b["total"]
-        total_2p = stats.total_with_extras(base_pp, config.PERSONS, config.EXTRAS_EUR)
-        diff = round(total_2p - config.REFERENCE_PRICE_EUR, 2)
+        termin = (f"{_fmt_date(b['out_date'])} → {_fmt_date(b['ret_date'])} · "
+                  f"{b['nights']} nocí")
 
-        # Hlavná karta: reálny odhad pre 2 os. + verdikt voči referencii
-        if diff <= 0:
-            tone, verdict = "good", f"dobrá cena · {diff:.0f} € vs {config.REFERENCE_PRICE_EUR:.0f} €"
+        # Hlavná karta s verdiktom: letenka za 1 os. vs cena letenky spred 2 rokov
+        diff_pp = round(base_pp - config.REFERENCE_PER_PERSON_EUR, 2)
+        if diff_pp <= 0:
+            tone, verdict = "good", (f"dobrá cena · {diff_pp:.0f} € vs "
+                                     f"~{config.REFERENCE_PER_PERSON_EUR:.0f} € (pred 2 r.)")
         else:
-            tone, verdict = "bad", f"+{diff:.0f} € oproti {config.REFERENCE_PRICE_EUR:.0f} € (pred 2 r.) · počkaj"
-        cards.append(card(
-            f"Reálny odhad ({config.PERSONS} os. + batožina)", f"{total_2p:.0f} €",
-            verdict, tone=tone))
+            tone, verdict = "bad", (f"+{diff_pp:.0f} € oproti ~{config.REFERENCE_PER_PERSON_EUR:.0f} € "
+                                    f"(pred 2 r.) · počkaj")
+        cards.append(card("Letenka / os. (tam+späť)", f"{base_pp:.0f} €",
+                          f"{verdict} · {termin}", tone=tone))
 
-        # Pohľad za 1 osobu (čistá letenka) vs referencia za 1 os.
-        cards.append(card(
-            "Letenka / os. (tam+späť)", f"{base_pp:.0f} €",
-            f"pred 2 r. ~{config.REFERENCE_PER_PERSON_EUR:.0f} € · "
-            f"{_fmt_date(b['out_date'])} → {_fmt_date(b['ret_date'])} · {b['nights']} nocí",
-            tone="accent"))
+        # Spolu za všetkých cestujúcich (len letenky)
+        cards.append(card(f"Spolu {config.PERSONS} osoby (letenky)",
+                          f"{base_pp * config.PERSONS:.0f} €", termin))
 
-        cards.append(card(
-            "Doplnky (fixné)", f"{config.EXTRAS_EUR:.0f} €",
-            f"kufor {config.BAGGAGE_PER_LEG_EUR:.0f} € ×2 + miestenky {config.SEATS_EUR:.0f} €"))
+        # Voliteľne: reálny odhad s batožinou + miestenkami (default vypnuté)
+        if config.INCLUDE_EXTRAS:
+            total_2p = stats.total_with_extras(base_pp, config.PERSONS, config.EXTRAS_EUR)
+            cards.append(card(
+                f"Reálny odhad ({config.PERSONS} os. + batožina)", f"{total_2p:.0f} €",
+                f"+ doplnky {config.EXTRAS_EUR:.0f} € "
+                f"(kufor {config.BAGGAGE_PER_LEG_EUR:.0f} € ×2 + miestenky {config.SEATS_EUR:.0f} €)",
+                tone="accent"))
 
     cards.append(card("Záznamov / meraní", f"{len(rows)}", f"{runs} behov"))
     return f"<div class='kpi-grid'>{''.join(cards)}</div>"
@@ -222,20 +231,32 @@ footer { color: #64748B; font-size: 12px; text-align: center; margin-top: 32px;
 
 def _preset_block(rows, preset, index):
     mn, mx = preset["min_nights"], preset["max_nights"]
+    label = html.escape(preset["label"])
     kpis = _kpi_cards_html(rows, mn, mx)
     table = _combos_table_html(rows, mn, mx)
     best = _chart_html(_best_over_time_fig(rows, mn, mx))
     hidden = "" if index == 0 else " hidden"
+
+    if config.INCLUDE_EXTRAS:
+        table_cap = (f"Ceny za 1 osobu (samotná letenka), pobyt {label}. Doplnky "
+                     f"(batožina + miestenky {config.EXTRAS_EUR:.0f} €) sa rátajú zvlášť hore.")
+        chart_cap = (f"Reálny odhad pre {config.PERSONS} osoby vrátane doplnkov ({label}), "
+                     f"oproti referencii {config.REFERENCE_PRICE_EUR:.0f} € spred 2 rokov.")
+    else:
+        table_cap = f"Ceny za 1 osobu (samotná letenka), pobyt {label}."
+        chart_cap = (f"Cena letenky za 1 os. v čase ({label}), oproti "
+                     f"~{config.REFERENCE_PER_PERSON_EUR:.0f} € spred 2 rokov.")
+
     return f"""<div class='preset' data-preset='{index}'{hidden}>
   {kpis}
   <section>
     <h2>Najlacnejší round-trip teraz</h2>
-    <p class='caption'>Ceny za 1 osobu (samotná letenka), pobyt {html.escape(preset['label'])}. Doplnky (batožina + miestenky {config.EXTRAS_EUR:.0f} €) sa rátajú zvlášť v reálnom odhade hore.</p>
+    <p class='caption'>{table_cap}</p>
     {table}
   </section>
   <section>
     <h2>Najlacnejší round-trip v čase</h2>
-    <p class='caption'>Reálny odhad pre {config.PERSONS} osoby vrátane doplnkov ({html.escape(preset['label'])}), oproti referencii {config.REFERENCE_PRICE_EUR:.0f} € spred 2 rokov.</p>
+    <p class='caption'>{chart_cap}</p>
     {best}
   </section>
 </div>"""

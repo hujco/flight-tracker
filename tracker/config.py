@@ -21,6 +21,9 @@ BAGGAGE_PER_LEG_EUR = 23.89          # jeden kufor nad hlavu, účtovaný na ka�
 SEATS_EUR = 20.0                     # miestenky (spolu za booking)
 EXTRAS_EUR = BAGGAGE_PER_LEG_EUR * 2 + SEATS_EUR   # = 67.78 (kufor tam+späť + miestenky)
 
+# Defaultne počítame LEN letenky (bez batožiny/miesteniek). Na True zapne extras do odhadu.
+INCLUDE_EXTRAS = False
+
 # Referencia spred 2 rokov: celá suma za 2 osoby vrátane batožiny a miesteniek
 REFERENCE_PRICE_EUR = 301.0
 # Odvodená čistá letenka na osobu vtedy: (301 − extras) / osoby ≈ 116.61
