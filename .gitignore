@@ -1,8 +1,8 @@
 __pycache__/
 *.pyc
 .venv/
-prices.db
 report.html
+_site/
 flight-tracker.log
 launchd.out.log
 launchd.err.log
