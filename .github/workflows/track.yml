@@ -55,10 +55,16 @@ jobs:
         with:
           path: _site
 
-      # Deploy MUSÍ ísť pred commitom dát — inak git push posunie hlavu vetvy
-      # za sha behu a Pages nasadenie zlyhá ("Deployment failed, try again later").
+      # Deploy MUSÍ ísť pred commitom dát (aby git push neposunul hlavu vetvy).
+      # deploy-pages občas hodí transientné "Deployment failed, try again later"
+      # (flaky Pages backend), preto pri zlyhaní jeden retry.
       - name: Deploy to GitHub Pages
         id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+
+      - name: Deploy to GitHub Pages (retry)
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4
 
       - name: Commit price history
