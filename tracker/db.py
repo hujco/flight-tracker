@@ -1,18 +1,19 @@
 import sqlite3
 
-SCHEMA = """
+_CREATE = """
 CREATE TABLE IF NOT EXISTS prices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     observed_at TEXT NOT NULL,
+    destination TEXT,
     direction TEXT NOT NULL,
     flight_date TEXT NOT NULL,
     flight_number TEXT NOT NULL,
     price REAL NOT NULL,
     seats_left INTEGER
 );
-CREATE INDEX IF NOT EXISTS idx_prices_lookup
-    ON prices(direction, flight_date, observed_at);
 """
+_INDEX = ("CREATE INDEX IF NOT EXISTS idx_prices_lookup "
+          "ON prices(destination, direction, flight_date, observed_at);")
 
 
 def connect(db_path):
@@ -21,8 +22,16 @@ def connect(db_path):
     return conn
 
 
+def _columns(conn):
+    return {r[1] for r in conn.execute("PRAGMA table_info(prices)").fetchall()}
+
+
 def init_db(conn):
-    conn.executescript(SCHEMA)
+    conn.execute(_CREATE)
+    if "destination" not in _columns(conn):   # migracia stareho DB
+        conn.execute("ALTER TABLE prices ADD COLUMN destination TEXT")
+        conn.execute("UPDATE prices SET destination='EFL' WHERE destination IS NULL")
+    conn.execute(_INDEX)
     conn.commit()
 
 
@@ -30,6 +39,7 @@ def insert_observations(conn, observed_at, records):
     rows = [
         (
             observed_at,
+            r["destination"],
             r["direction"],
             r["flight_date"],
             r["flight_number"],
@@ -41,8 +51,8 @@ def insert_observations(conn, observed_at, records):
     with conn:  # transakcia: vsetko alebo nic
         conn.executemany(
             "INSERT INTO prices "
-            "(observed_at, direction, flight_date, flight_number, price, seats_left) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(observed_at, destination, direction, flight_date, flight_number, price, seats_left) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             rows,
         )
     return len(rows)

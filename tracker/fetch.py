@@ -7,12 +7,13 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
 TIMEOUT = 20
 
 
-def parse_fares(payload, direction):
+def parse_fares(payload, direction, destination):
     records = []
     for fare in payload.get("fares", []):
         ob = fare["outbound"]
         records.append(
             {
+                "destination": destination,
                 "direction": direction,
                 "flight_date": ob["departureDate"][:10],
                 "flight_number": ob["flightNumber"],
@@ -46,9 +47,10 @@ def fetch_day(origin, destination, day, session=None, currency="EUR"):
     return resp.json()
 
 
-def fetch_leg(origin, destination, direction, year, month, session=None, currency="EUR"):
+def fetch_leg(origin, arrival, direction, destination, year, month,
+              session=None, currency="EUR"):
     records = []
     for day in days_in_month(year, month):
-        payload = fetch_day(origin, destination, day, session=session, currency=currency)
-        records.extend(parse_fares(payload, direction))
+        payload = fetch_day(origin, arrival, day, session=session, currency=currency)
+        records.extend(parse_fares(payload, direction, destination))
     return records

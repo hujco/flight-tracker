@@ -42,20 +42,16 @@ def test_detect_new_low_first_observation_below_target_fires():
     assert info is not None and info["prev_low"] is None
 
 
-def test_format_message_tiers_great_when_below_reference():
+def test_format_message_includes_destination_and_tier():
     info = {"price": 110.0, "observed_at": "t1", "prev_low": 130.0,
             "combo": {"out_date": "2026-09-07", "ret_date": "2026-09-14", "nights": 7, "label": "7 nocí"}}
-    msg = notify.format_message(info, reference_per_person=117.0, target=130.0, report_url="http://x")
-    assert "Skvelá" in msg          # 110 <= 117
-    assert "07.09.2026" in msg and "14.09.2026" in msg
-    assert "110 €/os" in msg
+    msg = notify.format_message(info, "Lefkada", reference_per_person=117.0, target=130.0, report_url="http://x")
+    assert "Lefkada" in msg
+    assert "Skvelá" in msg               # 110 <= 117
+    assert "07.09.2026" in msg and "110 €/os" in msg
 
-
-def test_format_message_good_when_above_reference():
-    info = {"price": 125.0, "observed_at": "t1", "prev_low": None,
-            "combo": {"out_date": "2026-09-07", "ret_date": "2026-09-14", "nights": 7, "label": "7 nocí"}}
-    msg = notify.format_message(info, reference_per_person=117.0, target=130.0, report_url="http://x")
-    assert "Dobrá cena" in msg       # 125 > 117
+    msg2 = notify.format_message({**info, "price": 125.0}, "Zakyntos", 117.0, 130.0, "http://x")
+    assert "Zakyntos" in msg2 and "Dobrá cena" in msg2   # 125 > 117
 
 
 class _FakeResp:
@@ -83,3 +79,32 @@ def test_send_telegram_posts_to_api():
     assert "botTOK/sendMessage" in url
     assert data["chat_id"] == "CHAT"
     assert data["text"] == "ahoj"
+
+
+def _row(ts, dest, direction, fdate, price):
+    return {"observed_at": ts, "destination": dest, "direction": direction,
+            "flight_date": fdate, "flight_number": "FR", "price": price}
+
+
+def test_maybe_notify_per_destination(monkeypatch):
+    # EFL klesne na nove minimum pod cielom, ZTH ostava draha
+    rows = [
+        _row("t1", "EFL", "OUT", "2026-09-07", 70.0), _row("t1", "EFL", "RET", "2026-09-14", 70.0),  # 140
+        _row("t2", "EFL", "OUT", "2026-09-07", 50.0), _row("t2", "EFL", "RET", "2026-09-14", 55.0),  # 105 (nove min < 130)
+        _row("t2", "ZTH", "OUT", "2026-09-07", 100.0), _row("t2", "ZTH", "RET", "2026-09-14", 100.0),  # 200
+    ]
+    sent = []
+
+    class S:
+        def post(self, url, data=None, timeout=None):
+            sent.append(data["text"])
+            class R:
+                def raise_for_status(self_): pass
+                def json(self_): return {"ok": True}
+            return R()
+
+    monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
+    ok, msg = notify.maybe_notify(rows, session=S())
+    assert ok is True
+    assert len(sent) == 1                 # len EFL
+    assert "Kefalonia" in sent[0]

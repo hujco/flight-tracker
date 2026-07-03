@@ -1,7 +1,9 @@
 # Ryanair Price Tracker (VIE ↔ EFL)
 
-Sleduje každú hodinu ceny letov Ryanair Viedeň ↔ Kefalonia za september 2026,
-ukladá históriu do SQLite a generuje `report.html` s grafmi. Bez LLM.
+Sleduje každú hodinu ceny letov Ryanair z Viedne na grécke ostrovy
+**Kefalonia (EFL), Lefkada (PVK), Zakyntos (ZTH)** za september 2026,
+ukladá históriu do SQLite a generuje `report.html` s grafmi a prepínačom
+destinácií. Bez LLM.
 
 ## Inštalácia
     python3 -m venv .venv
@@ -50,8 +52,9 @@ Workflow ich podá ako env; bez nich alert ticho spí, tracker beží ďalej.
 Cieľovú cenu zmeníš v `tracker/config.py` (`ALERT_TARGET_EUR`).
 
 ## Konfigurácia
-Trasu a okno zmeníš v `tracker/config.py` (LEGS, YEAR, MONTH, STAY_PRESETS,
-PERSONS, EXTRAS_EUR, INCLUDE_EXTRAS, REFERENCE_PRICE_EUR, ALERT_TARGET_EUR).
+Destinácie a okno v `tracker/config.py` (`ORIGIN`, `DESTINATIONS`, `YEAR`, `MONTH`,
+`STAY_PRESETS`, `PERSONS`, `EXTRAS_EUR`, `INCLUDE_EXTRAS`, `REFERENCE_PRICE_EUR`,
+`ALERT_TARGET_EUR`). Pridanie destinácie = jeden záznam `{code, label}` v `DESTINATIONS`.
 
 ## Testy
     .venv/bin/python -m pytest -v

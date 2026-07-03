@@ -44,12 +44,12 @@ def _style(fig, title=None):
     return fig
 
 
-def _price_evolution_fig(rows):
+def _price_evolution_fig(rows, dest_code):
     """Dve prehľadné čiary: najlacnejší odlet a najlacnejší návrat v čase."""
     fig = go.Figure()
     legs = (
-        ("OUT", "Najlacnejší odlet (VIE→EFL)", "#3B82F6"),
-        ("RET", "Najlacnejší návrat (EFL→VIE)", "#F59E0B"),
+        ("OUT", f"Najlacnejší odlet (VIE→{dest_code})", "#3B82F6"),
+        ("RET", f"Najlacnejší návrat ({dest_code}→VIE)", "#F59E0B"),
     )
     for direction, label, color in legs:
         series = stats.cheapest_leg_over_time(rows, direction)
@@ -147,11 +147,11 @@ def _kpi_cards_html(rows, min_nights, max_nights):
     return f"<div class='kpi-grid'>{''.join(cards)}</div>"
 
 
-def _combos_table_html(rows, min_nights, max_nights):
+def _combos_table_html(rows, min_nights, max_nights, dest_code):
     combos = stats.cheapest_roundtrip_now(
         rows, min_nights=min_nights, max_nights=max_nights)
-    head = ("<tr><th>Odlet (VIE→EFL)</th><th>Cena tam</th>"
-            "<th>Návrat (EFL→VIE)</th><th>Cena späť</th><th>Nocí</th><th>Spolu</th></tr>")
+    head = (f"<tr><th>Odlet (VIE→{dest_code})</th><th>Cena tam</th>"
+            f"<th>Návrat ({dest_code}→VIE)</th><th>Cena späť</th><th>Nocí</th><th>Spolu</th></tr>")
     body = "".join(
         f"<tr class='{ 'best' if i == 0 else '' }'>"
         f"<td>{_fmt_date(c['out_date'])}</td><td>{c['out_price']:.2f} €</td>"
@@ -189,6 +189,11 @@ h1 { font-size: 30px; font-weight: 700; margin: 6px 0 4px; color: #F8FAFC; }
   transition: background .2s, color .2s; }
 .toggle-btn.active { background: #3B82F6; color: #fff; }
 .toggle-btn:hover:not(.active) { color: #E2E8F0; }
+.dest-btn { cursor: pointer; border: 0; background: transparent; color: #94A3B8;
+  font: 600 14px 'Fira Sans', sans-serif; padding: 8px 16px; border-radius: 9px;
+  transition: background .2s, color .2s; }
+.dest-btn.active { background: #F59E0B; color: #0B1120; }
+.dest-btn:hover:not(.active) { color: #E2E8F0; }
 [hidden] { display: none !important; }
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 16px; margin: 24px 0 32px; }
@@ -229,11 +234,11 @@ footer { color: #64748B; font-size: 12px; text-align: center; margin-top: 32px;
 """
 
 
-def _preset_block(rows, preset, index):
+def _preset_block(rows, preset, index, dest_code):
     mn, mx = preset["min_nights"], preset["max_nights"]
     label = html.escape(preset["label"])
     kpis = _kpi_cards_html(rows, mn, mx)
-    table = _combos_table_html(rows, mn, mx)
+    table = _combos_table_html(rows, mn, mx, dest_code)
     best = _chart_html(_best_over_time_fig(rows, mn, mx))
     hidden = "" if index == 0 else " hidden"
 
@@ -266,21 +271,59 @@ _PLOTLY_JS = "<script src='https://cdn.plot.ly/plotly-2.35.2.min.js' charset='ut
 
 _TOGGLE_JS = """<script>
 (function () {
-  var btns = document.querySelectorAll('.toggle-btn');
-  var panels = document.querySelectorAll('.preset');
-  btns.forEach(function (b) {
-    b.addEventListener('click', function () {
+  function resizeVisible() {
+    if (!window.Plotly) return;
+    document.querySelectorAll(".dest-panel:not([hidden]) .plotly-graph-div")
+      .forEach(function (g) {
+        if (!g.closest("[hidden]")) window.Plotly.Plots.resize(g);
+      });
+  }
+  document.querySelectorAll(".dest-btn").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var d = b.dataset.dest;
+      document.querySelectorAll(".dest-btn").forEach(function (x) {
+        x.classList.toggle("active", x.dataset.dest === d); });
+      document.querySelectorAll(".dest-panel").forEach(function (p) {
+        p.hidden = (p.dataset.dest !== d); });
+      resizeVisible();
+    });
+  });
+  document.querySelectorAll(".toggle-btn").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var panel = b.closest(".dest-panel");
       var t = b.dataset.target;
-      btns.forEach(function (x) { x.classList.toggle('active', x.dataset.target === t); });
-      panels.forEach(function (p) { p.hidden = (p.dataset.preset !== t); });
-      if (window.Plotly) {
-        document.querySelectorAll("[data-preset='" + t + "'] .plotly-graph-div")
-          .forEach(function (g) { window.Plotly.Plots.resize(g); });
-      }
+      panel.querySelectorAll(".toggle-btn").forEach(function (x) {
+        x.classList.toggle("active", x.dataset.target === t); });
+      panel.querySelectorAll(".preset").forEach(function (p) {
+        p.hidden = (p.dataset.preset !== t); });
+      resizeVisible();
     });
   });
 })();
 </script>"""
+
+
+def _dest_panel(rows, dest, index):
+    """Panel jednej destinácie: prepínač nocí + presety + graf vývoja."""
+    buttons = "".join(
+        f"<button class='toggle-btn{' active' if i == 0 else ''}' data-target='{i}'>"
+        f"{html.escape(p['label'])}</button>"
+        for i, p in enumerate(config.STAY_PRESETS)
+    )
+    toggle = (f"<div class='toggle-wrap'><span class='toggle-label'>Dĺžka pobytu:</span> "
+              f"<div class='toggle' role='tablist'>{buttons}</div></div>")
+    blocks = "".join(_preset_block(rows, p, i, dest["code"]) for i, p in enumerate(config.STAY_PRESETS))
+    evolution = _chart_html(_price_evolution_fig(rows, dest["code"]))
+    hidden = "" if index == 0 else " hidden"
+    return f"""<div class='dest-panel' data-dest='{html.escape(dest['code'])}'{hidden}>
+  {toggle}
+  {blocks}
+  <section class='evolution'>
+    <h2>Vývoj ceny v čase</h2>
+    <p class='caption'>Najnižšia cena odletu a návratu (za 1 os.) pri každom meraní — nezávislé od dĺžky pobytu.</p>
+    {evolution}
+  </section>
+</div>"""
 
 
 def build_report_html(rows):
@@ -289,27 +332,26 @@ def build_report_html(rows):
                 f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
                 f"<title>Ryanair VIE↔EFL tracker</title><style>{_CSS}</style></head>"
                 f"<body><div class='wrap'><header><div class='eyebrow'>Ryanair price tracker</div>"
-                f"<h1>Vývoj ceny VIE↔EFL</h1></header>"
+                f"<h1>Vývoj cien leteniek</h1></header>"
                 f"<section><p class='empty'>Zatiaľ žiadne dáta</p></section></div></body></html>")
 
     updated = stats.latest_observed_at(rows)
-    evolution = _chart_html(_price_evolution_fig(rows))
-
-    buttons = "".join(
-        f"<button class='toggle-btn{' active' if i == 0 else ''}' data-target='{i}'>"
-        f"{html.escape(p['label'])}</button>"
-        for i, p in enumerate(config.STAY_PRESETS)
+    dest_buttons = "".join(
+        f"<button class='dest-btn{' active' if i == 0 else ''}' data-dest='{html.escape(d['code'])}'>"
+        f"{html.escape(d['label'])}</button>"
+        for i, d in enumerate(config.DESTINATIONS)
     )
-    toggle = f"<div class='toggle' role='tablist'>{buttons}</div>"
-    blocks = "".join(
-        _preset_block(rows, p, i) for i, p in enumerate(config.STAY_PRESETS))
+    panels = "".join(
+        _dest_panel([r for r in rows if r.get("destination") == d["code"]], d, i)
+        for i, d in enumerate(config.DESTINATIONS)
+    )
 
     return f"""<!DOCTYPE html>
 <html lang='sk'>
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
-<title>Ryanair VIE↔EFL tracker</title>
+<title>Ryanair VIE tracker</title>
 {_PLOTLY_JS}
 <style>{_CSS}</style>
 </head>
@@ -317,16 +359,12 @@ def build_report_html(rows):
 <div class='wrap'>
   <header>
     <div class='eyebrow'>Ryanair price tracker · september 2026</div>
-    <h1>Viedeň ↔ Kefalonia</h1>
+    <h1>Viedeň → grécke ostrovy</h1>
     <div class='updated'>Posledná aktualizácia: {html.escape(_fmt_dt(updated))}</div>
   </header>
-  <div class='toggle-wrap'><span class='toggle-label'>Dĺžka pobytu:</span> {toggle}</div>
-  {blocks}
-  <section>
-    <h2>Vývoj ceny v čase</h2>
-    <p class='caption'>Najnižšia cena odletu a návratu (za 1 os.) pri každom meraní — nezávislé od dĺžky pobytu.</p>
-    {evolution}
-  </section>
+  <div class='toggle-wrap'><span class='toggle-label'>Destinácia:</span>
+    <div class='toggle' role='tablist'>{dest_buttons}</div></div>
+  {panels}
   <footer>Dáta: services-api.ryanair.com · generované lokálne, bez LLM</footer>
 </div>
 {_TOGGLE_JS}

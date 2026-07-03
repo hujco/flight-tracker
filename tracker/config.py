@@ -36,10 +36,12 @@ REFERENCE_PRICE_EUR = 301.0
 # Odvodená čistá letenka na osobu vtedy: (301 − extras) / osoby ≈ 116.61
 REFERENCE_PER_PERSON_EUR = round((REFERENCE_PRICE_EUR - EXTRAS_EUR) / PERSONS, 2)
 
-# OUT = tam (VIE->EFL), RET = spat (EFL->VIE)
-LEGS = [
-    {"direction": "OUT", "origin": "VIE", "destination": "EFL"},
-    {"direction": "RET", "origin": "EFL", "destination": "VIE"},
+# OUT = tam (VIE->destinacia), RET = spat (destinacia->VIE)
+ORIGIN = "VIE"
+DESTINATIONS = [
+    {"code": "EFL", "label": "Kefalonia"},
+    {"code": "PVK", "label": "Lefkada"},    # letisko Preveza/Aktion
+    {"code": "ZTH", "label": "Zakyntos"},
 ]
 
 ROOT = Path(__file__).resolve().parent.parent
