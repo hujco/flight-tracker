@@ -2,7 +2,7 @@ name: track
 
 on:
   schedule:
-    - cron: '0 * * * *'   # každú hodinu (UTC; GitHub môže o pár minút oneskoriť)
+    - cron: '0 */3 * * *'   # každé 3 hodiny (UTC) — ceny sa menia ~raz denne, hodinovo bolo zbytočné
   workflow_dispatch:        # manuálne spustenie z GitHub UI / gh
     inputs:
       test_alert:
