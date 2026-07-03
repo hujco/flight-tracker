@@ -16,9 +16,7 @@ on:
 
 # scheduled workflows bežia len na default branch (main)
 permissions:
-  contents: write   # commit price history späť do repa
-  pages: write      # publikovať report na Pages
-  id-token: write   # OIDC pre deploy-pages
+  contents: write   # commit price history do main + publish report do gh-pages
 
 concurrency:
   group: pages
@@ -27,9 +25,6 @@ concurrency:
 jobs:
   track:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy1.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,38 +41,19 @@ jobs:
           ALERT_TEST: ${{ inputs.test_alert }}
         run: python -m tracker.run
 
-      - name: Prepare Pages site
+      - name: Prepare site
         run: |
-          mkdir -p _site
-          cp report.html _site/index.html
+          mkdir -p public
+          cp report.html public/index.html
 
-      - uses: actions/upload-pages-artifact@v3
+      # Plán B: publikovať report do vetvy gh-pages (legacy Pages build je spoľahlivý;
+      # obchádza flaky "Deployment failed, try again later" z actions/deploy-pages).
+      - name: Publish report to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: _site
-
-      # Deploy MUSÍ ísť pred commitom dát (aby git push neposunul hlavu vetvy).
-      # deploy-pages občas hodí transientné "Deployment failed, try again later"
-      # (flaky Pages backend), ktoré nezmizne hneď → 3 pokusy s pauzami.
-      - name: Deploy to GitHub Pages (attempt 1)
-        id: deploy1
-        uses: actions/deploy-pages@v4
-        continue-on-error: true
-
-      - name: Wait then attempt 2
-        if: steps.deploy1.outcome == 'failure'
-        run: sleep 60
-      - name: Deploy to GitHub Pages (attempt 2)
-        id: deploy2
-        if: steps.deploy1.outcome == 'failure'
-        uses: actions/deploy-pages@v4
-        continue-on-error: true
-
-      - name: Wait then attempt 3
-        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
-        run: sleep 120
-      - name: Deploy to GitHub Pages (attempt 3)
-        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: gh-pages
 
       - name: Commit price history
         run: |
