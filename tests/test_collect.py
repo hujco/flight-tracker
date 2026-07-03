@@ -2,29 +2,22 @@ import sqlite3
 import pytest
 from tracker import collect, db
 
-SAMPLE = {
-    "fares": [
-        {"outbound": {"departureDate": "2026-09-26T11:55:00",
-                      "price": {"value": 34.99}, "flightNumber": "FR7310"}}
-    ]
-}
+SAMPLE = {"fares": [{"outbound": {"departureDate": "2026-09-26T11:55:00",
+                                  "price": {"value": 34.99}, "flightNumber": "FR1"}}]}
 EMPTY = {"fares": []}
+DESTS = [{"code": "EFL", "label": "Kefalonia"}, {"code": "ZTH", "label": "Zakyntos"}]
 
 
-class FakeResponse:
-    def __init__(self, payload):
-        self._payload = payload
-    def raise_for_status(self):
-        pass
-    def json(self):
-        return self._payload
+class FakeResp:
+    def __init__(self, p): self._p = p
+    def raise_for_status(self): pass
+    def json(self): return self._p
 
 
 class FakeSession:
-    def __init__(self, by_day):
-        self.by_day = by_day
+    """Vráti SAMPLE pre 26.9., inak prázdne — pre každú trasu."""
     def get(self, url, params=None, headers=None, timeout=None):
-        return FakeResponse(self.by_day.get(params["outboundDepartureDateFrom"], EMPTY))
+        return FakeResp(SAMPLE if params["outboundDepartureDateFrom"] == "2026-09-26" else EMPTY)
 
 
 class FailingSession:
@@ -39,25 +32,20 @@ def make_conn():
     return conn
 
 
-LEGS = [
-    {"direction": "OUT", "origin": "VIE", "destination": "EFL"},
-    {"direction": "RET", "origin": "EFL", "destination": "VIE"},
-]
-
-
-def test_collect_once_writes_all_legs():
+def test_collect_once_all_destinations_and_directions():
     conn = make_conn()
-    sess = FakeSession({"2026-09-26": SAMPLE})
-    n = collect.collect_once(conn, "2026-06-30T14:00", legs=LEGS,
-                             year=2026, month=9, session=sess)
-    assert n == 2  # jeden let kazdym smerom (26.9.)
+    n = collect.collect_once(conn, "2026-06-30T14:00", destinations=DESTS,
+                             origin="VIE", year=2026, month=9, session=FakeSession())
+    # 2 destinacie x 2 smery x 1 let (26.9.) = 4
+    assert n == 4
     rows = db.all_rows(conn)
+    assert {r["destination"] for r in rows} == {"EFL", "ZTH"}
     assert {r["direction"] for r in rows} == {"OUT", "RET"}
 
 
-def test_collect_once_writes_nothing_on_failure():
+def test_collect_once_atomic_on_failure():
     conn = make_conn()
     with pytest.raises(RuntimeError):
-        collect.collect_once(conn, "2026-06-30T14:00", legs=LEGS,
-                             year=2026, month=9, session=FailingSession())
-    assert db.all_rows(conn) == []  # atomicita: nic sa nezapise
+        collect.collect_once(conn, "2026-06-30T14:00", destinations=DESTS,
+                             origin="VIE", year=2026, month=9, session=FailingSession())
+    assert db.all_rows(conn) == []
