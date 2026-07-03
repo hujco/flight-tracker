@@ -44,12 +44,12 @@ def _style(fig, title=None):
     return fig
 
 
-def _price_evolution_fig(rows):
+def _price_evolution_fig(rows, dest_code):
     """Dve prehľadné čiary: najlacnejší odlet a najlacnejší návrat v čase."""
     fig = go.Figure()
     legs = (
-        ("OUT", "Najlacnejší odlet (VIE→EFL)", "#3B82F6"),
-        ("RET", "Najlacnejší návrat (EFL→VIE)", "#F59E0B"),
+        ("OUT", f"Najlacnejší odlet (VIE→{dest_code})", "#3B82F6"),
+        ("RET", f"Najlacnejší návrat ({dest_code}→VIE)", "#F59E0B"),
     )
     for direction, label, color in legs:
         series = stats.cheapest_leg_over_time(rows, direction)
@@ -147,11 +147,11 @@ def _kpi_cards_html(rows, min_nights, max_nights):
     return f"<div class='kpi-grid'>{''.join(cards)}</div>"
 
 
-def _combos_table_html(rows, min_nights, max_nights):
+def _combos_table_html(rows, min_nights, max_nights, dest_code):
     combos = stats.cheapest_roundtrip_now(
         rows, min_nights=min_nights, max_nights=max_nights)
-    head = ("<tr><th>Odlet (VIE→EFL)</th><th>Cena tam</th>"
-            "<th>Návrat (EFL→VIE)</th><th>Cena späť</th><th>Nocí</th><th>Spolu</th></tr>")
+    head = (f"<tr><th>Odlet (VIE→{dest_code})</th><th>Cena tam</th>"
+            f"<th>Návrat ({dest_code}→VIE)</th><th>Cena späť</th><th>Nocí</th><th>Spolu</th></tr>")
     body = "".join(
         f"<tr class='{ 'best' if i == 0 else '' }'>"
         f"<td>{_fmt_date(c['out_date'])}</td><td>{c['out_price']:.2f} €</td>"
@@ -234,11 +234,11 @@ footer { color: #64748B; font-size: 12px; text-align: center; margin-top: 32px;
 """
 
 
-def _preset_block(rows, preset, index):
+def _preset_block(rows, preset, index, dest_code):
     mn, mx = preset["min_nights"], preset["max_nights"]
     label = html.escape(preset["label"])
     kpis = _kpi_cards_html(rows, mn, mx)
-    table = _combos_table_html(rows, mn, mx)
+    table = _combos_table_html(rows, mn, mx, dest_code)
     best = _chart_html(_best_over_time_fig(rows, mn, mx))
     hidden = "" if index == 0 else " hidden"
 
@@ -312,8 +312,8 @@ def _dest_panel(rows, dest, index):
     )
     toggle = (f"<div class='toggle-wrap'><span class='toggle-label'>Dĺžka pobytu:</span> "
               f"<div class='toggle' role='tablist'>{buttons}</div></div>")
-    blocks = "".join(_preset_block(rows, p, i) for i, p in enumerate(config.STAY_PRESETS))
-    evolution = _chart_html(_price_evolution_fig(rows))
+    blocks = "".join(_preset_block(rows, p, i, dest["code"]) for i, p in enumerate(config.STAY_PRESETS))
+    evolution = _chart_html(_price_evolution_fig(rows, dest["code"]))
     hidden = "" if index == 0 else " hidden"
     return f"""<div class='dest-panel' data-dest='{html.escape(dest['code'])}'{hidden}>
   {toggle}
@@ -332,7 +332,7 @@ def build_report_html(rows):
                 f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
                 f"<title>Ryanair VIE↔EFL tracker</title><style>{_CSS}</style></head>"
                 f"<body><div class='wrap'><header><div class='eyebrow'>Ryanair price tracker</div>"
-                f"<h1>Vývoj ceny VIE↔EFL</h1></header>"
+                f"<h1>Vývoj cien leteniek</h1></header>"
                 f"<section><p class='empty'>Zatiaľ žiadne dáta</p></section></div></body></html>")
 
     updated = stats.latest_observed_at(rows)

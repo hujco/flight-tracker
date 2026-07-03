@@ -15,6 +15,9 @@ def test_report_has_destination_toggle():
     assert html.count("dest-btn") >= 3        # tlacidlo na kazdu destinaciu
     assert "133" in html                       # EFL 35+98 v tabulke (7 noci)
     assert "Najlacnejší round-trip" in html
+    # per-destination labels: each panel must use its own IATA code
+    assert "VIE→EFL" in html                  # EFL panel headers / legend
+    assert "VIE→ZTH" in html                  # ZTH panel headers / legend
 
 
 def test_report_empty():
