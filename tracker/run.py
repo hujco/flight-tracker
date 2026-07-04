@@ -18,10 +18,10 @@ def main():
     try:
         n = collect.collect_once(conn, observed_at)
         logging.info("collected %d rows at %s", n, observed_at)
-    except Exception as exc:  # zlyhanie zberu -> nic nezapisane, skus o hodinu
-        logging.error("collect failed at %s: %s", observed_at, exc)
-        return
+    except Exception as exc:  # zlyhanie zberu -> nic sa nezapise (atomicita),
+        logging.error("collect failed at %s: %s", observed_at, exc)  # report sa aj tak pregeneruje z existujucich dat
 
+    # report vzdy pregeneruj z aktualnych dat v DB (aj ked tento zber zlyhal)
     rows = db.all_rows(conn)
     report.write_report(rows, config.REPORT_PATH)
     logging.info("report written to %s (%d total rows)", config.REPORT_PATH, len(rows))
