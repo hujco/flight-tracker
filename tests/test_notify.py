@@ -42,16 +42,17 @@ def test_detect_new_low_first_observation_below_target_fires():
     assert info is not None and info["prev_low"] is None
 
 
-def test_format_message_includes_destination_and_tier():
+def test_format_message_includes_destination_origin_and_tier():
     info = {"price": 110.0, "observed_at": "t1", "prev_low": 130.0,
             "combo": {"out_date": "2026-09-07", "ret_date": "2026-09-14", "nights": 7, "label": "7 nocí"}}
-    msg = notify.format_message(info, "Lefkada", reference_per_person=117.0, target=130.0, report_url="http://x")
+    msg = notify.format_message(info, "Lefkada", "BUD", reference_per_person=117.0, target=130.0, report_url="http://x")
     assert "Lefkada" in msg
+    assert "BUD↔Lefkada" in msg           # origin v texte, nie natvrdo VIE
     assert "Skvelá" in msg               # 110 <= 117
     assert "07.09.2026" in msg and "110 €/os" in msg
 
-    msg2 = notify.format_message({**info, "price": 125.0}, "Zakyntos", 117.0, 130.0, "http://x")
-    assert "Zakyntos" in msg2 and "Dobrá cena" in msg2   # 125 > 117
+    msg2 = notify.format_message({**info, "price": 125.0}, "Zakyntos", "VIE", 117.0, 130.0, "http://x")
+    assert "VIE↔Zakyntos" in msg2 and "Dobrá cena" in msg2   # 125 > 117
 
 
 class _FakeResp:
@@ -81,8 +82,8 @@ def test_send_telegram_posts_to_api():
     assert data["text"] == "ahoj"
 
 
-def _row(ts, dest, direction, fdate, price):
-    return {"observed_at": ts, "destination": dest, "direction": direction,
+def _row(ts, dest, direction, fdate, price, origin="VIE"):
+    return {"observed_at": ts, "origin": origin, "destination": dest, "direction": direction,
             "flight_date": fdate, "flight_number": "FR", "price": price}
 
 
@@ -106,5 +107,30 @@ def test_maybe_notify_per_destination(monkeypatch):
     monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
     ok, msg = notify.maybe_notify(rows, session=S())
     assert ok is True
-    assert len(sent) == 1                 # len EFL
+    assert len(sent) == 1                 # len VIE EFL
     assert "Kefalonia" in sent[0]
+    assert "VIE↔Kefalonia" in sent[0]
+
+
+def test_maybe_notify_separates_origins(monkeypatch):
+    # rovnaka destinacia (PVK/Lefkada), ale VIE draha a BUD lacna -> alert len pre BUD
+    rows = [
+        _row("t1", "PVK", "OUT", "2026-09-06", 100.0, origin="VIE"), _row("t1", "PVK", "RET", "2026-09-13", 100.0, origin="VIE"),  # VIE 200
+        _row("t1", "PVK", "OUT", "2026-09-06", 40.0, origin="BUD"),  _row("t1", "PVK", "RET", "2026-09-13", 40.0, origin="BUD"),   # BUD 80 < 130
+    ]
+    sent = []
+
+    class S:
+        def post(self, url, data=None, timeout=None):
+            sent.append(data["text"])
+            class R:
+                def raise_for_status(self_): pass
+                def json(self_): return {"ok": True}
+            return R()
+
+    monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
+    ok, msg = notify.maybe_notify(rows, session=S())
+    assert ok is True
+    assert len(sent) == 1
+    assert "BUD↔Lefkada" in sent[0]       # BUD, nie VIE; cena 80 (nesparovana s VIE)
+    assert "80 €/os" in sent[0]

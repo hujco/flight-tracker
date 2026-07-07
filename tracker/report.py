@@ -44,12 +44,34 @@ def _style(fig, title=None):
     return fig
 
 
-def _price_evolution_fig(rows, dest_code):
+def _origin_label(code):
+    return {"VIE": "Viedeň", "BUD": "Budapešť"}.get(code, code)
+
+
+def _row_origin(r):
+    """Origin riadku; staré/nezatagované dáta počítame ako hlavné odletisko."""
+    return r.get("origin") or config.ORIGIN
+
+
+def _all_origins():
+    origins = [config.ORIGIN]
+    if getattr(config, "BUD_TRIPS", None) and config.BUD_ORIGIN not in origins:
+        origins.append(config.BUD_ORIGIN)
+    return origins
+
+
+def _origin_stay_presets(origin_code):
+    if origin_code == getattr(config, "BUD_ORIGIN", None):
+        return config.BUD_STAY_PRESETS
+    return config.STAY_PRESETS
+
+
+def _price_evolution_fig(rows, dest_code, origin_code):
     """Dve prehľadné čiary: najlacnejší odlet a najlacnejší návrat v čase."""
     fig = go.Figure()
     legs = (
-        ("OUT", f"Najlacnejší odlet (VIE→{dest_code})", "#3B82F6"),
-        ("RET", f"Najlacnejší návrat ({dest_code}→VIE)", "#F59E0B"),
+        ("OUT", f"Najlacnejší odlet ({origin_code}→{dest_code})", "#3B82F6"),
+        ("RET", f"Najlacnejší návrat ({dest_code}→{origin_code})", "#F59E0B"),
     )
     for direction, label, color in legs:
         series = stats.cheapest_leg_over_time(rows, direction)
@@ -147,11 +169,11 @@ def _kpi_cards_html(rows, min_nights, max_nights):
     return f"<div class='kpi-grid'>{''.join(cards)}</div>"
 
 
-def _combos_table_html(rows, min_nights, max_nights, dest_code):
+def _combos_table_html(rows, min_nights, max_nights, dest_code, origin_code):
     combos = stats.cheapest_roundtrip_now(
         rows, min_nights=min_nights, max_nights=max_nights)
-    head = (f"<tr><th>Odlet (VIE→{dest_code})</th><th>Cena tam</th>"
-            f"<th>Návrat ({dest_code}→VIE)</th><th>Cena späť</th><th>Nocí</th><th>Spolu</th></tr>")
+    head = (f"<tr><th>Odlet ({origin_code}→{dest_code})</th><th>Cena tam</th>"
+            f"<th>Návrat ({dest_code}→{origin_code})</th><th>Cena späť</th><th>Nocí</th><th>Spolu</th></tr>")
     body = "".join(
         f"<tr class='{ 'best' if i == 0 else '' }'>"
         f"<td>{_fmt_date(c['out_date'])}</td><td>{c['out_price']:.2f} €</td>"
@@ -195,6 +217,16 @@ h1 { font-size: 30px; font-weight: 700; margin: 6px 0 4px; color: #F8FAFC; }
 .dest-btn.active { background: #F59E0B; color: #0B1120; }
 .dest-btn:hover:not(.active) { color: #E2E8F0; }
 [hidden] { display: none !important; }
+.origin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+  gap: 22px; align-items: start; }
+.origin-single { display: block; }
+.origin-block { min-width: 0; }
+.origin-grid .origin-block { background: rgba(15,23,42,0.4);
+  border: 1px solid rgba(148,163,184,0.10); border-radius: 20px; padding: 18px 18px 6px; }
+.origin-title { font-size: 15px; font-weight: 700; color: #F8FAFC; margin: 0 0 6px;
+  letter-spacing: .02em; }
+.origin-grid .origin-title { color: #FBBF24; }
+.origin-grid .origin-block:first-child .origin-title { color: #60A5FA; }
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 16px; margin: 24px 0 32px; }
 .kpi { background: rgba(30,41,59,0.55); border: 1px solid rgba(148,163,184,0.12);
@@ -234,11 +266,11 @@ footer { color: #64748B; font-size: 12px; text-align: center; margin-top: 32px;
 """
 
 
-def _preset_block(rows, preset, index, dest_code):
+def _preset_block(rows, preset, index, dest_code, origin_code):
     mn, mx = preset["min_nights"], preset["max_nights"]
     label = html.escape(preset["label"])
     kpis = _kpi_cards_html(rows, mn, mx)
-    table = _combos_table_html(rows, mn, mx, dest_code)
+    table = _combos_table_html(rows, mn, mx, dest_code, origin_code)
     best = _chart_html(_best_over_time_fig(rows, mn, mx))
     hidden = "" if index == 0 else " hidden"
 
@@ -290,7 +322,7 @@ _TOGGLE_JS = """<script>
   });
   document.querySelectorAll(".toggle-btn").forEach(function (b) {
     b.addEventListener("click", function () {
-      var panel = b.closest(".dest-panel");
+      var panel = b.closest(".origin-block");
       var t = b.dataset.target;
       panel.querySelectorAll(".toggle-btn").forEach(function (x) {
         x.classList.toggle("active", x.dataset.target === t); });
@@ -303,19 +335,27 @@ _TOGGLE_JS = """<script>
 </script>"""
 
 
-def _dest_panel(rows, dest, index):
-    """Panel jednej destinácie: prepínač nocí + presety + graf vývoja."""
-    buttons = "".join(
-        f"<button class='toggle-btn{' active' if i == 0 else ''}' data-target='{i}'>"
-        f"{html.escape(p['label'])}</button>"
-        for i, p in enumerate(config.STAY_PRESETS)
+def _origin_block(dest_rows, dest_code, origin_code):
+    """Jeden stĺpec porovnania: dáta jedného odletiska pre danú destináciu."""
+    orows = [r for r in dest_rows if _row_origin(r) == origin_code]
+    presets = _origin_stay_presets(origin_code)
+    if len(presets) > 1:
+        buttons = "".join(
+            f"<button class='toggle-btn{' active' if i == 0 else ''}' data-target='{i}'>"
+            f"{html.escape(p['label'])}</button>"
+            for i, p in enumerate(presets)
+        )
+        toggle = (f"<div class='toggle-wrap'><span class='toggle-label'>Dĺžka pobytu:</span> "
+                  f"<div class='toggle' role='tablist'>{buttons}</div></div>")
+    else:
+        toggle = ""  # jediná (fixná) dĺžka pobytu → prepínač netreba
+    blocks = "".join(
+        _preset_block(orows, p, i, dest_code, origin_code)
+        for i, p in enumerate(presets)
     )
-    toggle = (f"<div class='toggle-wrap'><span class='toggle-label'>Dĺžka pobytu:</span> "
-              f"<div class='toggle' role='tablist'>{buttons}</div></div>")
-    blocks = "".join(_preset_block(rows, p, i, dest["code"]) for i, p in enumerate(config.STAY_PRESETS))
-    evolution = _chart_html(_price_evolution_fig(rows, dest["code"]))
-    hidden = "" if index == 0 else " hidden"
-    return f"""<div class='dest-panel' data-dest='{html.escape(dest['code'])}'{hidden}>
+    evolution = _chart_html(_price_evolution_fig(orows, dest_code, origin_code))
+    return f"""<div class='origin-block'>
+  <h3 class='origin-title'>Z {html.escape(_origin_label(origin_code))} ({html.escape(origin_code)})</h3>
   {toggle}
   {blocks}
   <section class='evolution'>
@@ -323,6 +363,21 @@ def _dest_panel(rows, dest, index):
     <p class='caption'>Najnižšia cena odletu a návratu (za 1 os.) pri každom meraní — nezávislé od dĺžky pobytu.</p>
     {evolution}
   </section>
+</div>"""
+
+
+def _dest_panel(rows, dest, index):
+    """Panel jednej destinácie: pre každé odletisko (VIE, príp. BUD) stĺpec vedľa seba."""
+    origins = [o for o in _all_origins() if any(_row_origin(r) == o for r in rows)]
+    if not origins:
+        origins = [config.ORIGIN]
+    blocks = "".join(_origin_block(rows, dest["code"], o) for o in origins)
+    grid_cls = "origin-grid" if len(origins) > 1 else "origin-single"
+    hidden = "" if index == 0 else " hidden"
+    return f"""<div class='dest-panel' data-dest='{html.escape(dest['code'])}'{hidden}>
+  <div class='{grid_cls}'>
+    {blocks}
+  </div>
 </div>"""
 
 
@@ -359,7 +414,7 @@ def build_report_html(rows):
 <div class='wrap'>
   <header>
     <div class='eyebrow'>Ryanair price tracker · september 2026</div>
-    <h1>Viedeň → grécke ostrovy</h1>
+    <h1>Viedeň &amp; Budapešť → grécke ostrovy</h1>
     <div class='updated'>Posledná aktualizácia: {html.escape(_fmt_dt(updated))}</div>
   </header>
   <div class='toggle-wrap'><span class='toggle-label'>Destinácia:</span>

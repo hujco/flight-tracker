@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 
 YEAR = 2026
@@ -36,12 +37,39 @@ REFERENCE_PRICE_EUR = 301.0
 # Odvodená čistá letenka na osobu vtedy: (301 − extras) / osoby ≈ 116.61
 REFERENCE_PER_PERSON_EUR = round((REFERENCE_PRICE_EUR - EXTRAS_EUR) / PERSONS, 2)
 
-# OUT = tam (VIE->destinacia), RET = spat (destinacia->VIE)
+# OUT = tam (origin->destinacia), RET = spat (destinacia->origin)
 ORIGIN = "VIE"
 DESTINATIONS = [
     {"code": "EFL", "label": "Kefalonia"},
     {"code": "PVK", "label": "Lefkada"},    # letisko Preveza/Aktion
     {"code": "ZTH", "label": "Zakyntos"},
+]
+
+# Druhé odletisko: Budapešť (BUD). Na rozdiel od VIE (sken celého mesiaca naprieč
+# dĺžkami pobytu) tu sledujeme LEN striktné fixné itineráre s pevnou dĺžkou pobytu.
+# Lieta na tie isté ostrovné kódy ako VIE → v DB ich rozlišuje stĺpec `origin`.
+BUD_ORIGIN = "BUD"
+BUD_DESTINATIONS = [
+    {"code": "PVK", "label": "Lefkada"},
+    # Kefalonia (EFL): Ryanair z Budapešti NElieta (0 letov za sept 2026 pri overení).
+    # Ak pribudne, stačí odkomentovať:
+    # {"code": "EFL", "label": "Kefalonia"},
+]
+# Každý trip = presný odlet + presný návrat. Pridať/odobrať = jeden riadok.
+BUD_TRIPS = [
+    {"out": "2026-09-06", "ret": "2026-09-13"},   # 7 nocí
+    {"out": "2026-09-01", "ret": "2026-09-08"},   # 7 nocí (voliteľné)
+]
+
+
+def _trip_nights(trip):
+    return (date.fromisoformat(trip["ret"]) - date.fromisoformat(trip["out"])).days
+
+
+# Preset(y) dĺžky pobytu pre BUD odvodené z fixných itinerárov (tu všetky 7 nocí).
+BUD_STAY_PRESETS = [
+    {"label": f"{n} nocí", "min_nights": n, "max_nights": n}
+    for n in sorted({_trip_nights(t) for t in BUD_TRIPS})
 ]
 
 ROOT = Path(__file__).resolve().parent.parent
