@@ -66,7 +66,7 @@ def detect_new_low(rows, presets, target):
     }
 
 
-def format_message(info, destination_label, reference_per_person, target, report_url):
+def format_message(info, destination_label, origin_code, reference_per_person, target, report_url):
     c = info["combo"]
     price = info["price"]
     if price <= reference_per_person:
@@ -74,8 +74,8 @@ def format_message(info, destination_label, reference_per_person, target, report
     else:
         head = "✅ Dobrá cena"
     lines = [
-        f"<b>{head} — {destination_label}</b>",
-        f"Letenka VIE↔{destination_label}: <b>{price:.0f} €/os</b> ({c['label']})",
+        f"<b>{head} — {origin_code}↔{destination_label}</b>",
+        f"Letenka {origin_code}↔{destination_label}: <b>{price:.0f} €/os</b> ({c['label']})",
         f"{_fmt_date(c['out_date'])} → {_fmt_date(c['ret_date'])} · {c['nights']} nocí",
     ]
     if info["prev_low"] is not None:
@@ -97,25 +97,38 @@ def send_telegram(token, chat_id, text, session=None):
     return resp.json()
 
 
+def _campaigns():
+    """(origin, destinácie, stay-presety) pre každé sledované odletisko."""
+    camps = [(config.ORIGIN, config.DESTINATIONS, config.STAY_PRESETS)]
+    if getattr(config, "BUD_TRIPS", None):
+        camps.append((config.BUD_ORIGIN, config.BUD_DESTINATIONS, config.BUD_STAY_PRESETS))
+    return camps
+
+
 def maybe_notify(rows, session=None):
-    """Pre každú destináciu zisti nové minimum pod cieľom a pošli Telegram."""
+    """Pre každé odletisko × destináciu zisti nové minimum pod cieľom a pošli Telegram."""
     token = os.environ.get("TELEGRAM_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID") or config.TELEGRAM_CHAT_ID
     msgs = []
     sent_any = False
-    for dst in config.DESTINATIONS:
-        drows = [r for r in rows if r.get("destination") == dst["code"]]
-        info = detect_new_low(drows, config.STAY_PRESETS, config.ALERT_TARGET_EUR)
-        if info is None:
-            continue
-        if not token or not chat_id:
-            msgs.append(f"{dst['label']}: nové min {info['price']:.0f} €, ale chýba TELEGRAM_TOKEN")
-            continue
-        text = format_message(info, dst["label"], config.REFERENCE_PER_PERSON_EUR,
-                              config.ALERT_TARGET_EUR, config.REPORT_URL)
-        send_telegram(token, chat_id, text, session=session)
-        sent_any = True
-        msgs.append(f"{dst['label']}: poslaný alert {info['price']:.0f} €/os")
+    for origin, destinations, presets in _campaigns():
+        for dst in destinations:
+            drows = [r for r in rows
+                     if r.get("destination") == dst["code"]
+                     and (r.get("origin") or config.ORIGIN) == origin]
+            info = detect_new_low(drows, presets, config.ALERT_TARGET_EUR)
+            if info is None:
+                continue
+            tag = f"{origin}↔{dst['label']}"
+            if not token or not chat_id:
+                msgs.append(f"{tag}: nové min {info['price']:.0f} €, ale chýba TELEGRAM_TOKEN")
+                continue
+            text = format_message(info, dst["label"], origin,
+                                  config.REFERENCE_PER_PERSON_EUR,
+                                  config.ALERT_TARGET_EUR, config.REPORT_URL)
+            send_telegram(token, chat_id, text, session=session)
+            sent_any = True
+            msgs.append(f"{tag}: poslaný alert {info['price']:.0f} €/os")
     if not msgs:
         return False, "žiadne nové minimum pod cieľom"
     return sent_any, "; ".join(msgs)

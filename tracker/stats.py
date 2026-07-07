@@ -36,26 +36,37 @@ def cheapest_roundtrip_now(rows, max_results=10, min_nights=0, max_nights=None):
     ts = latest_observed_at(rows)
     if ts is None:
         return []
-    out = [r for r in rows if r["observed_at"] == ts and r["direction"] == "OUT"]
-    ret = [r for r in rows if r["observed_at"] == ts and r["direction"] == "RET"]
+    # OUT a RET párujeme LEN v rámci rovnakého odletiska (origin) — inak by sa
+    # spároval napr. odlet z BUD s návratom do VIE. Riadky bez originu (staré
+    # dáta) tvoria jednu skupinu, takže správanie ostáva spätne kompatibilné.
+    out_by_origin = defaultdict(list)
+    ret_by_origin = defaultdict(list)
+    for r in rows:
+        if r["observed_at"] != ts:
+            continue
+        if r["direction"] == "OUT":
+            out_by_origin[r.get("origin")].append(r)
+        elif r["direction"] == "RET":
+            ret_by_origin[r.get("origin")].append(r)
     combos = []
-    for o in out:
-        for b in ret:
-            nights = _nights_between(o["flight_date"], b["flight_date"])
-            if nights < min_nights:
-                continue
-            if max_nights is not None and nights > max_nights:
-                continue
-            combos.append(
-                {
-                    "out_date": o["flight_date"],
-                    "out_price": o["price"],
-                    "ret_date": b["flight_date"],
-                    "ret_price": b["price"],
-                    "nights": nights,
-                    "total": round(o["price"] + b["price"], 2),
-                }
-            )
+    for origin, out in out_by_origin.items():
+        for o in out:
+            for b in ret_by_origin.get(origin, []):
+                nights = _nights_between(o["flight_date"], b["flight_date"])
+                if nights < min_nights:
+                    continue
+                if max_nights is not None and nights > max_nights:
+                    continue
+                combos.append(
+                    {
+                        "out_date": o["flight_date"],
+                        "out_price": o["price"],
+                        "ret_date": b["flight_date"],
+                        "ret_price": b["price"],
+                        "nights": nights,
+                        "total": round(o["price"] + b["price"], 2),
+                    }
+                )
     combos.sort(key=lambda c: c["total"])
     return combos[:max_results]
 

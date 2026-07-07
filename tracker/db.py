@@ -4,6 +4,7 @@ _CREATE = """
 CREATE TABLE IF NOT EXISTS prices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     observed_at TEXT NOT NULL,
+    origin TEXT,
     destination TEXT,
     direction TEXT NOT NULL,
     flight_date TEXT NOT NULL,
@@ -13,7 +14,7 @@ CREATE TABLE IF NOT EXISTS prices (
 );
 """
 _INDEX = ("CREATE INDEX IF NOT EXISTS idx_prices_lookup "
-          "ON prices(destination, direction, flight_date, observed_at);")
+          "ON prices(origin, destination, direction, flight_date, observed_at);")
 
 
 def connect(db_path):
@@ -28,9 +29,13 @@ def _columns(conn):
 
 def init_db(conn):
     conn.execute(_CREATE)
-    if "destination" not in _columns(conn):   # migracia stareho DB
+    cols = _columns(conn)
+    if "destination" not in cols:   # migracia stareho DB (pred multi-destinacie)
         conn.execute("ALTER TABLE prices ADD COLUMN destination TEXT")
         conn.execute("UPDATE prices SET destination='EFL' WHERE destination IS NULL")
+    if "origin" not in cols:        # migracia stareho DB (pred multi-origin): vsetko bolo VIE
+        conn.execute("ALTER TABLE prices ADD COLUMN origin TEXT")
+        conn.execute("UPDATE prices SET origin='VIE' WHERE origin IS NULL")
     conn.execute(_INDEX)
     conn.commit()
 
@@ -39,6 +44,7 @@ def insert_observations(conn, observed_at, records):
     rows = [
         (
             observed_at,
+            r.get("origin"),
             r["destination"],
             r["direction"],
             r["flight_date"],
@@ -51,8 +57,8 @@ def insert_observations(conn, observed_at, records):
     with conn:  # transakcia: vsetko alebo nic
         conn.executemany(
             "INSERT INTO prices "
-            "(observed_at, destination, direction, flight_date, flight_number, price, seats_left) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(observed_at, origin, destination, direction, flight_date, flight_number, price, seats_left) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             rows,
         )
     return len(rows)

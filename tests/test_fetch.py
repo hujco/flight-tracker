@@ -9,12 +9,18 @@ SAMPLE = {
 EMPTY = {"fares": []}
 
 
-def test_parse_fares_tags_destination():
-    recs = fetch.parse_fares(SAMPLE, "OUT", "EFL")
+def test_parse_fares_tags_destination_and_origin():
+    recs = fetch.parse_fares(SAMPLE, "OUT", "EFL", "BUD")
     assert recs == [{
-        "destination": "EFL", "direction": "OUT", "flight_date": "2026-09-26",
-        "flight_number": "FR7310", "price": 34.99, "seats_left": None,
+        "origin": "BUD", "destination": "EFL", "direction": "OUT",
+        "flight_date": "2026-09-26", "flight_number": "FR7310",
+        "price": 34.99, "seats_left": None,
     }]
+
+
+def test_parse_fares_origin_defaults_none():
+    recs = fetch.parse_fares(SAMPLE, "OUT", "EFL")
+    assert recs[0]["origin"] is None
 
 
 def test_parse_fares_empty():
@@ -44,11 +50,22 @@ class FakeSession:
         return FakeResp(self.by_day.get(params["outboundDepartureDateFrom"], EMPTY))
 
 
-def test_fetch_leg_tags_destination_and_iterates():
+def test_fetch_leg_tags_destination_origin_and_iterates():
     sess = FakeSession({"2026-09-26": SAMPLE})
-    recs = fetch.fetch_leg("VIE", "PVK", "OUT", "PVK", 2026, 9, session=sess)
+    recs = fetch.fetch_leg("VIE", "PVK", "OUT", "PVK", "VIE", 2026, 9, session=sess)
     assert len(sess.calls) == 30
     assert len(recs) == 1
     assert recs[0]["destination"] == "PVK"
+    assert recs[0]["origin"] == "VIE"
     assert sess.calls[0]["departureAirportIataCode"] == "VIE"
     assert sess.calls[0]["arrivalAirportIataCode"] == "PVK"
+
+
+def test_fetch_fixed_leg_only_given_days():
+    sess = FakeSession({"2026-09-06": SAMPLE})
+    recs = fetch.fetch_fixed_leg("BUD", "EFL", "OUT", "EFL", "BUD",
+                                 ["2026-09-06", "2026-09-01"], session=sess)
+    # len 2 zadané dni sa fetchujú (nie celý mesiac)
+    assert len(sess.calls) == 2
+    assert {c["outboundDepartureDateFrom"] for c in sess.calls} == {"2026-09-06", "2026-09-01"}
+    assert len(recs) == 1 and recs[0]["origin"] == "BUD" and recs[0]["destination"] == "EFL"

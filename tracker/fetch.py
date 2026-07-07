@@ -7,12 +7,13 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
 TIMEOUT = 20
 
 
-def parse_fares(payload, direction, destination):
+def parse_fares(payload, direction, destination, origin=None):
     records = []
     for fare in payload.get("fares", []):
         ob = fare["outbound"]
         records.append(
             {
+                "origin": origin,
                 "destination": destination,
                 "direction": direction,
                 "flight_date": ob["departureDate"][:10],
@@ -33,11 +34,11 @@ def days_in_month(year, month):
     return days
 
 
-def fetch_day(origin, destination, day, session=None, currency="EUR"):
+def fetch_day(departure, arrival, day, session=None, currency="EUR"):
     client = session or requests
     params = {
-        "departureAirportIataCode": origin,
-        "arrivalAirportIataCode": destination,
+        "departureAirportIataCode": departure,
+        "arrivalAirportIataCode": arrival,
         "outboundDepartureDateFrom": day,
         "outboundDepartureDateTo": day,
         "currency": currency,
@@ -47,10 +48,22 @@ def fetch_day(origin, destination, day, session=None, currency="EUR"):
     return resp.json()
 
 
-def fetch_leg(origin, arrival, direction, destination, year, month,
+def fetch_leg(departure, arrival, direction, destination, origin, year, month,
               session=None, currency="EUR"):
+    """Sken celého mesiaca pre jednu nohu. `origin` = odletisko kampane (VIE/BUD),
+    `departure`/`arrival` = konkrétne letiská tejto nohy (pri RET sú prehodené)."""
     records = []
     for day in days_in_month(year, month):
-        payload = fetch_day(origin, arrival, day, session=session, currency=currency)
-        records.extend(parse_fares(payload, direction, destination))
+        payload = fetch_day(departure, arrival, day, session=session, currency=currency)
+        records.extend(parse_fares(payload, direction, destination, origin))
+    return records
+
+
+def fetch_fixed_leg(departure, arrival, direction, destination, origin, days,
+                    session=None, currency="EUR"):
+    """Ako fetch_leg, ale len pre zadané konkrétne dni (striktné fixné itineráre)."""
+    records = []
+    for day in days:
+        payload = fetch_day(departure, arrival, day, session=session, currency=currency)
+        records.extend(parse_fares(payload, direction, destination, origin))
     return records

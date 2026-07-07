@@ -65,3 +65,17 @@ def test_cheapest_roundtrip_over_time():
 def test_cheapest_roundtrip_over_time_with_night_range():
     # s oknom 5-10 noci nie je ziadna platna kombinacia -> prazdna seria
     assert stats.cheapest_roundtrip_over_time(ROWS, min_nights=5, max_nights=10) == []
+
+
+def test_cheapest_roundtrip_now_does_not_cross_origins():
+    # VIE odlet + BUD navrat sa NESMU sparovat; platne su len pary v ramci originu
+    rows = [
+        {"observed_at": "t1", "origin": "VIE", "direction": "OUT", "flight_date": "2026-09-06", "flight_number": "V1", "price": 40.0},
+        {"observed_at": "t1", "origin": "VIE", "direction": "RET", "flight_date": "2026-09-13", "flight_number": "V2", "price": 40.0},
+        {"observed_at": "t1", "origin": "BUD", "direction": "OUT", "flight_date": "2026-09-06", "flight_number": "B1", "price": 10.0},
+        {"observed_at": "t1", "origin": "BUD", "direction": "RET", "flight_date": "2026-09-13", "flight_number": "B2", "price": 10.0},
+    ]
+    combos = stats.cheapest_roundtrip_now(rows, min_nights=7, max_nights=7)
+    # presne 2 round-tripy (VIE 80, BUD 20) — ziadny krizeny 50 €
+    assert len(combos) == 2
+    assert {c["total"] for c in combos} == {80.0, 20.0}
