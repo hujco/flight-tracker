@@ -540,7 +540,7 @@ def _comparison_section_html(rows, dest_code, origins):
     chart = _chart_html(_combined_over_time_fig(rows, origins, mn, mx))
     verdict_html = f"<p class='cmp-verdict'>{verdict}</p>" if verdict else ""
     return f"""<section class='cmp-section'>
-  <h2>Odkiaľ sa oplatí letieť do {html.escape(_dest_label(dest_code))}?</h2>
+  <h2>Odkiaľ sa oplatí letieť do {html.escape(_dest_to(dest_code))}?</h2>
   <p class='caption'>Najlacnejší {nights_lbl}-nocový round-trip za 1 os. — priame porovnanie odletísk.</p>
   <div class='cmp-grid'>{''.join(cards)}</div>
   {verdict_html}
@@ -663,8 +663,8 @@ def build_report_html(rows):
 <body>
 <div class='wrap'>
   <header>
-    <div class='eyebrow'>Ryanair price tracker · september 2026</div>
-    <h1>Viedeň &amp; Budapešť → Lefkada</h1>
+    <div class='eyebrow'>Ryanair price tracker · 6.–13.9.2026</div>
+    <h1>Budapešť → Lefkada</h1>
     <div class='updated'>Posledná aktualizácia: {html.escape(_fmt_dt(updated))}</div>
   </header>
   {dest_toggle}
