@@ -19,17 +19,22 @@ def test_report_lefkada_no_destination_toggle():
     assert "VIE→PVK" in html                  # panel pouziva vlastny label
 
 
-def test_report_shows_origins_side_by_side():
-    # Lefkada ma VIE aj BUD data -> dva stlpce vedla seba (origin-grid)
+def test_report_compares_origins():
+    # Lefkada ma VIE (110) aj BUD (45) -> porovnavacia hlavicka s verdiktom + spolocny graf
     rows = ROWS + [
         {"observed_at": "2026-06-30T14:00", "origin": "BUD", "destination": "PVK", "direction": "OUT", "flight_date": "2026-09-06", "flight_number": "W6A", "price": 20.0},
         {"observed_at": "2026-06-30T14:00", "origin": "BUD", "destination": "PVK", "direction": "RET", "flight_date": "2026-09-13", "flight_number": "W6B", "price": 25.0},  # 7 noci -> 45
     ]
     html = report.build_report_html(rows)
-    assert "origin-grid" in html              # vedla seba
+    # porovnavacie karty
+    assert "cmp-grid" in html and "cmp-card" in html
     assert "(VIE)" in html and "(BUD)" in html
-    assert "BUD→PVK" in html                  # BUD stlpec ma vlastny label
-    assert "45" in html                       # BUD 20+25 round-trip (7 noci)
+    # verdikt: BUD (45) lacnejsi o 65 oproti VIE (110)
+    assert "Budapešť" in html and "lacnejšia" in html and "65" in html
+    assert "najlacnejšie" in html             # odznak vitaza
+    # detaily nizsie: obe odletiska, vlastne labely + ceny
+    assert "BUD→PVK" in html and "VIE→PVK" in html
+    assert "45" in html and "110" in html
 
 
 def test_report_empty():

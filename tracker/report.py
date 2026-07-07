@@ -48,6 +48,18 @@ def _origin_label(code):
     return {"VIE": "Viedeň", "BUD": "Budapešť"}.get(code, code)
 
 
+def _dest_label(code):
+    for d in config.DESTINATIONS:
+        if d["code"] == code:
+            return d["label"]
+    return code
+
+
+def _origin_from(code):
+    """Genitív pre spojenie 'Z ...' (Z Viedne / Z Budapešti)."""
+    return {"VIE": "Viedne", "BUD": "Budapešti"}.get(code, _origin_label(code))
+
+
 def _row_origin(r):
     """Origin riadku; staré/nezatagované dáta počítame ako hlavné odletisko."""
     return r.get("origin") or config.ORIGIN
@@ -217,16 +229,43 @@ h1 { font-size: 30px; font-weight: 700; margin: 6px 0 4px; color: #F8FAFC; }
 .dest-btn.active { background: #F59E0B; color: #0B1120; }
 .dest-btn:hover:not(.active) { color: #E2E8F0; }
 [hidden] { display: none !important; }
-.origin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
-  gap: 22px; align-items: start; }
-.origin-single { display: block; }
-.origin-block { min-width: 0; }
-.origin-grid .origin-block { background: rgba(15,23,42,0.4);
-  border: 1px solid rgba(148,163,184,0.10); border-radius: 20px; padding: 18px 18px 6px; }
-.origin-title { font-size: 15px; font-weight: 700; color: #F8FAFC; margin: 0 0 6px;
-  letter-spacing: .02em; }
-.origin-grid .origin-title { color: #FBBF24; }
-.origin-grid .origin-block:first-child .origin-title { color: #60A5FA; }
+/* Porovnávacia hlavička (hero) */
+.cmp-section { background: linear-gradient(180deg, rgba(30,41,59,0.55), rgba(15,23,42,0.5));
+  border: 1px solid rgba(148,163,184,0.14); border-radius: 20px;
+  padding: 22px 24px 24px; margin-bottom: 26px; }
+.cmp-section h2 { margin-bottom: 2px; }
+.cmp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px; margin: 12px 0 4px; }
+.cmp-card { position: relative; border-radius: 16px; padding: 18px 20px;
+  background: rgba(15,23,42,0.5); border: 1px solid rgba(148,163,184,0.14); }
+.cmp-vie { border-left: 4px solid #3B82F6; }
+.cmp-bud { border-left: 4px solid #F59E0B; }
+.cmp-win { border-color: rgba(34,197,94,0.45);
+  box-shadow: 0 0 0 1px rgba(34,197,94,0.45), 0 10px 34px rgba(34,197,94,0.10); }
+.cmp-org { font-size: 13px; color: #CBD5E1; font-weight: 600;
+  display: flex; align-items: center; gap: 8px; }
+.cmp-code { font-family: 'Fira Code', monospace; font-size: 11px; color: #94A3B8;
+  border: 1px solid rgba(148,163,184,0.25); border-radius: 6px; padding: 1px 6px; }
+.cmp-badge { margin-left: auto; font-size: 11px; font-weight: 700; color: #0B1120;
+  background: #4ADE80; border-radius: 999px; padding: 2px 9px; letter-spacing: .02em; }
+.cmp-price { font-family: 'Fira Code', monospace; font-size: 34px; font-weight: 700;
+  color: #F8FAFC; margin: 10px 0 2px; }
+.cmp-win .cmp-price { color: #4ADE80; }
+.cmp-unit { font-size: 14px; font-weight: 500; color: #94A3B8; }
+.cmp-sub { font-size: 13px; color: #94A3B8; font-family: 'Fira Code', monospace; }
+.cmp-verdict { margin: 14px 2px 2px; font-size: 15px; color: #E2E8F0; }
+.cmp-verdict b { color: #FBBF24; }
+.cmp-chart { margin-top: 14px; }
+.cmp-chart h3 { font-size: 14px; font-weight: 600; color: #CBD5E1; margin: 6px 0 0; }
+
+/* Detaily na plnú šírku, stohované pod porovnaním */
+.origin-stack { display: flex; flex-direction: column; }
+.origin-single, .origin-block { min-width: 0; }
+.origin-stack > .origin-block + .origin-block {
+  border-top: 1px solid rgba(148,163,184,0.12); padding-top: 22px; margin-top: 14px; }
+.origin-title { font-size: 16px; font-weight: 700; margin: 0 0 10px; letter-spacing: .02em; }
+.origin-stack > .origin-block:nth-child(1) .origin-title { color: #60A5FA; }
+.origin-stack > .origin-block:nth-child(2) .origin-title { color: #FBBF24; }
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 16px; margin: 24px 0 32px; }
 .kpi { background: rgba(30,41,59,0.55); border: 1px solid rgba(148,163,184,0.12);
@@ -355,7 +394,7 @@ def _origin_block(dest_rows, dest_code, origin_code):
     )
     evolution = _chart_html(_price_evolution_fig(orows, dest_code, origin_code))
     return f"""<div class='origin-block'>
-  <h3 class='origin-title'>Z {html.escape(_origin_label(origin_code))} ({html.escape(origin_code)})</h3>
+  <h3 class='origin-title'>Z {html.escape(_origin_from(origin_code))} ({html.escape(origin_code)})</h3>
   {toggle}
   {blocks}
   <section class='evolution'>
@@ -366,17 +405,105 @@ def _origin_block(dest_rows, dest_code, origin_code):
 </div>"""
 
 
+def _comparison_nights():
+    """Spoločná báza pre porovnanie odletísk = dĺžka pobytu, ktorú sleduje BUD."""
+    presets = config.BUD_STAY_PRESETS or config.STAY_PRESETS
+    return presets[0]["min_nights"], presets[0]["max_nights"]
+
+
+def _best_now(rows, origin_code, mn, mx):
+    orows = [r for r in rows if _row_origin(r) == origin_code]
+    combos = stats.cheapest_roundtrip_now(orows, min_nights=mn, max_nights=mx)
+    return combos[0] if combos else None
+
+
+def _combined_over_time_fig(rows, origins, mn, mx):
+    """Jeden graf, čiara na odletisko: najlacnejší round-trip za 1 os. v čase."""
+    colors = {"VIE": "#3B82F6", "BUD": "#F59E0B"}
+    fig = go.Figure()
+    for o in origins:
+        orows = [r for r in rows if _row_origin(r) == o]
+        series = stats.cheapest_roundtrip_over_time(orows, min_nights=mn, max_nights=mx)
+        if not series:
+            continue
+        c = colors.get(o, "#93C5FD")
+        fig.add_trace(go.Scatter(
+            x=[s[0] for s in series], y=[s[1] for s in series],
+            mode="lines+markers", name=f"Z {_origin_label(o)} ({o})",
+            line=dict(width=3, color=c), marker=dict(size=6, color=c)))
+    fig = _style(fig)
+    if fig.data:
+        fig.add_hline(
+            y=config.REFERENCE_PER_PERSON_EUR, line_dash="dash", line_color="#94A3B8",
+            annotation_text=f"pred 2 r.: ~{config.REFERENCE_PER_PERSON_EUR:.0f} €",
+            annotation_position="top left", annotation_font_color="#CBD5E1")
+    return fig
+
+
+def _comparison_section_html(rows, dest_code, origins):
+    """Hero porovnanie: karty na odletisko + verdikt + spoločný graf v čase."""
+    mn, mx = _comparison_nights()
+    nights_lbl = f"{mn}" if mn == mx else f"{mn}–{mx}"
+    bests = {o: _best_now(rows, o, mn, mx) for o in origins}
+    valid = {o: b for o, b in bests.items() if b}
+    winner = min(valid, key=lambda o: valid[o]["total"]) if valid else None
+
+    cards = []
+    for o in origins:
+        b = bests[o]
+        accent = "cmp-vie" if o == config.ORIGIN else "cmp-bud"
+        win = " cmp-win" if (winner == o and len(valid) > 1) else ""
+        if b:
+            price = f"{b['total']:.0f} €"
+            sub = (f"{_fmt_date(b['out_date'])} → {_fmt_date(b['ret_date'])} · "
+                   f"{b['nights']} nocí")
+        else:
+            price, sub = "—", "zatiaľ bez dát"
+        badge = "<span class='cmp-badge'>najlacnejšie</span>" if win else ""
+        cards.append(
+            f"<div class='cmp-card {accent}{win}'>"
+            f"<div class='cmp-org'>Z {html.escape(_origin_from(o))} "
+            f"<span class='cmp-code'>{html.escape(o)}</span>{badge}</div>"
+            f"<div class='cmp-price'>{price}<span class='cmp-unit'> /os</span></div>"
+            f"<div class='cmp-sub'>{html.escape(sub)}</div></div>")
+
+    verdict = ""
+    if len(valid) == 2:
+        srt = sorted(valid.items(), key=lambda kv: kv[1]["total"])
+        diff = round(srt[1][1]["total"] - srt[0][1]["total"], 2)
+        if diff == 0:
+            verdict = "Rovnaká najlacnejšia cena z oboch miest."
+        else:
+            verdict = (f"<b>{html.escape(_origin_label(srt[0][0]))}</b> je teraz lacnejšia o "
+                       f"<b>{diff:.0f} €/os</b> (pri {nights_lbl} nociach).")
+
+    chart = _chart_html(_combined_over_time_fig(rows, origins, mn, mx))
+    verdict_html = f"<p class='cmp-verdict'>{verdict}</p>" if verdict else ""
+    return f"""<section class='cmp-section'>
+  <h2>Odkiaľ sa oplatí letieť do {html.escape(_dest_label(dest_code))}?</h2>
+  <p class='caption'>Najlacnejší {nights_lbl}-nocový round-trip za 1 os. — priame porovnanie odletísk.</p>
+  <div class='cmp-grid'>{''.join(cards)}</div>
+  {verdict_html}
+  <div class='cmp-chart'>
+    <h3>Vývoj najlacnejšej ceny v čase</h3>
+    {chart}
+  </div>
+</section>"""
+
+
 def _dest_panel(rows, dest, index):
-    """Panel jednej destinácie: pre každé odletisko (VIE, príp. BUD) stĺpec vedľa seba."""
+    """Panel destinácie: hore porovnanie odletísk, pod tým detaily na plnú šírku."""
     origins = [o for o in _all_origins() if any(_row_origin(r) == o for r in rows)]
     if not origins:
         origins = [config.ORIGIN]
-    blocks = "".join(_origin_block(rows, dest["code"], o) for o in origins)
-    grid_cls = "origin-grid" if len(origins) > 1 else "origin-single"
     hidden = "" if index == 0 else " hidden"
+    # Porovnávacia hlavička len keď je čo porovnávať (2+ odletiská)
+    comparison = _comparison_section_html(rows, dest["code"], origins) if len(origins) > 1 else ""
+    details = "".join(_origin_block(rows, dest["code"], o) for o in origins)
     return f"""<div class='dest-panel' data-dest='{html.escape(dest['code'])}'{hidden}>
-  <div class='{grid_cls}'>
-    {blocks}
+  {comparison}
+  <div class='origin-stack'>
+    {details}
   </div>
 </div>"""
 
