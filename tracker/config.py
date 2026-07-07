@@ -59,6 +59,10 @@ BUD_TRIPS = [
     {"out": "2026-09-01", "ret": "2026-09-08"},   # 7 nocí (voliteľné)
 ]
 
+# Náš hlavný let: zvýrazní sa navrchu reportu (fixný termín, ktorý reálne riešime).
+PRIMARY_TRIP = {"origin": "BUD", "destination": "PVK",
+                "out": "2026-09-06", "ret": "2026-09-13"}
+
 
 def _trip_nights(trip):
     return (date.fromisoformat(trip["ret"]) - date.fromisoformat(trip["out"])).days

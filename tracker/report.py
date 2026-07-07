@@ -23,6 +23,10 @@ _COLORWAY = ["#3B82F6", "#F59E0B", "#60A5FA", "#FBBF24", "#93C5FD",
              "#FCD34D", "#2563EB", "#D97706", "#A5B4FC", "#FB923C"]
 _AMBER = "#F59E0B"
 
+# Počítadlo osôb v porovnávacej hlavičke (prepočíta spolu cenu za skupinu).
+_PERSONS_OPTIONS = [1, 2, 4]
+_DEFAULT_PERSONS = 4
+
 
 def _style(fig, title=None):
     fig.update_layout(
@@ -58,6 +62,12 @@ def _dest_label(code):
 def _origin_from(code):
     """Genitív pre spojenie 'Z ...' (Z Viedne / Z Budapešti)."""
     return {"VIE": "Viedne", "BUD": "Budapešti"}.get(code, _origin_label(code))
+
+
+def _dest_to(code):
+    """Genitív pre spojenie 'do ...' (do Lefkady)."""
+    gen = {"PVK": "Lefkady", "EFL": "Kefalonie", "ZTH": "Zakyntu"}
+    return gen.get(code, _dest_label(code))
 
 
 def _row_origin(r):
@@ -229,7 +239,25 @@ h1 { font-size: 30px; font-weight: 700; margin: 6px 0 4px; color: #F8FAFC; }
 .dest-btn.active { background: #F59E0B; color: #0B1120; }
 .dest-btn:hover:not(.active) { color: #E2E8F0; }
 [hidden] { display: none !important; }
-/* Porovnávacia hlavička (hero) */
+/* Náš hlavný let (zvýraznené navrchu) */
+.hero { background: linear-gradient(180deg, rgba(245,158,11,0.15), rgba(15,23,42,0.55));
+  border: 1px solid rgba(245,158,11,0.40); border-radius: 22px;
+  padding: 22px 26px 24px; margin-bottom: 26px; }
+.hero-eyebrow { color: #FBBF24; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; font-size: 12px; }
+.hero-title { font-size: 22px; font-weight: 700; color: #F8FAFC; margin: 6px 0 2px;
+  line-height: 1.3; }
+.hero-card { display: flex; align-items: baseline; gap: 24px; flex-wrap: wrap;
+  margin: 14px 0 10px; }
+.hero-price { font-family: 'Fira Code', monospace; font-size: 44px; font-weight: 700;
+  color: #FBBF24; }
+.hero-price .cmp-unit { font-size: 16px; }
+.hero-total { font-family: 'Fira Code', monospace; font-size: 18px; color: #CBD5E1; }
+.hero-total b { color: #F8FAFC; font-size: 22px; }
+.hero-legs { font-family: 'Fira Code', monospace; font-size: 13px; color: #94A3B8; }
+.hero-legs b { color: #E2E8F0; }
+
+/* Porovnávacia hlavička (odletiská) */
 .cmp-section { background: linear-gradient(180deg, rgba(30,41,59,0.55), rgba(15,23,42,0.5));
   border: 1px solid rgba(148,163,184,0.14); border-radius: 20px;
   padding: 22px 24px 24px; margin-bottom: 26px; }
@@ -253,6 +281,17 @@ h1 { font-size: 30px; font-weight: 700; margin: 6px 0 4px; color: #F8FAFC; }
 .cmp-win .cmp-price { color: #4ADE80; }
 .cmp-unit { font-size: 14px; font-weight: 500; color: #94A3B8; }
 .cmp-sub { font-size: 13px; color: #94A3B8; font-family: 'Fira Code', monospace; }
+.cmp-total { margin-top: 12px; padding-top: 10px; font-size: 14px; color: #CBD5E1;
+  border-top: 1px solid rgba(148,163,184,0.12); font-family: 'Fira Code', monospace;
+  min-height: 20px; }
+.cmp-total b { color: #F8FAFC; font-size: 17px; }
+.cmp-win .cmp-total b { color: #4ADE80; }
+.pp-wrap { display: flex; align-items: center; gap: 12px; margin: 14px 0 2px; }
+.pp-toggle .pp-btn { cursor: pointer; border: 0; background: transparent; color: #94A3B8;
+  font: 600 13px 'Fira Code', monospace; padding: 7px 15px; border-radius: 9px;
+  transition: background .2s, color .2s; }
+.pp-toggle .pp-btn.active { background: #F59E0B; color: #0B1120; }
+.pp-toggle .pp-btn:hover:not(.active) { color: #E2E8F0; }
 .cmp-verdict { margin: 14px 2px 2px; font-size: 15px; color: #E2E8F0; }
 .cmp-verdict b { color: #FBBF24; }
 .cmp-chart { margin-top: 14px; }
@@ -370,6 +409,21 @@ _TOGGLE_JS = """<script>
       resizeVisible();
     });
   });
+  // Počítadlo osôb (globálne): prepočíta spolu cenu skupiny z ceny za 1 os. (data-pp)
+  function applyPersons(n) {
+    document.querySelectorAll(".pp-btn").forEach(function (x) {
+      x.classList.toggle("active", +x.dataset.n === n); });
+    document.querySelectorAll("[data-pp]").forEach(function (c) {
+      var el = c.querySelector(".js-total");
+      if (!el) return;
+      var pp = parseFloat(c.dataset.pp);
+      el.innerHTML = isNaN(pp) ? "" :
+        "Spolu " + n + " os.: <b>" + Math.round(pp * n) + " €</b>";
+    });
+  }
+  document.querySelectorAll(".pp-btn").forEach(function (b) {
+    b.addEventListener("click", function () { applyPersons(+b.dataset.n); });
+  });
 })();
 </script>"""
 
@@ -457,15 +511,21 @@ def _comparison_section_html(rows, dest_code, origins):
             price = f"{b['total']:.0f} €"
             sub = (f"{_fmt_date(b['out_date'])} → {_fmt_date(b['ret_date'])} · "
                    f"{b['nights']} nocí")
+            pp = b["total"]
+            data_pp = f" data-pp='{pp:.2f}'"
+            total = (f"<div class='cmp-total js-total'>Spolu {_DEFAULT_PERSONS} os.: "
+                     f"<b>{pp * _DEFAULT_PERSONS:.0f} €</b></div>")
         else:
-            price, sub = "—", "zatiaľ bez dát"
+            price, sub, data_pp, total = "—", "zatiaľ bez dát", "", \
+                "<div class='cmp-total js-total'></div>"
         badge = "<span class='cmp-badge'>najlacnejšie</span>" if win else ""
         cards.append(
-            f"<div class='cmp-card {accent}{win}'>"
+            f"<div class='cmp-card {accent}{win}'{data_pp}>"
             f"<div class='cmp-org'>Z {html.escape(_origin_from(o))} "
             f"<span class='cmp-code'>{html.escape(o)}</span>{badge}</div>"
             f"<div class='cmp-price'>{price}<span class='cmp-unit'> /os</span></div>"
-            f"<div class='cmp-sub'>{html.escape(sub)}</div></div>")
+            f"<div class='cmp-sub'>{html.escape(sub)}</div>"
+            f"{total}</div>")
 
     verdict = ""
     if len(valid) == 2:
@@ -491,16 +551,72 @@ def _comparison_section_html(rows, dest_code, origins):
 </section>"""
 
 
+def _primary_trip_now(rows):
+    """Cena nášho hlavného fixného letu (config.PRIMARY_TRIP) pri poslednom meraní."""
+    t = config.PRIMARY_TRIP
+    ts = stats.latest_observed_at(rows)
+    if not ts:
+        return None
+
+    def leg_min(direction, day):
+        prices = [r["price"] for r in rows
+                  if r["observed_at"] == ts and _row_origin(r) == t["origin"]
+                  and r["destination"] == t["destination"]
+                  and r["direction"] == direction and r["flight_date"] == day]
+        return min(prices) if prices else None
+
+    op, rp = leg_min("OUT", t["out"]), leg_min("RET", t["ret"])
+    if op is None or rp is None:
+        return None
+    nights = (date.fromisoformat(t["ret"]) - date.fromisoformat(t["out"])).days
+    return {"out_price": op, "ret_price": rp, "total": round(op + rp, 2), "nights": nights}
+
+
+def _persons_toggle_html():
+    buttons = "".join(
+        f"<button class='pp-btn{' active' if n == _DEFAULT_PERSONS else ''}' "
+        f"data-n='{n}'>{n}</button>"
+        for n in _PERSONS_OPTIONS
+    )
+    return (f"<div class='pp-wrap'><span class='toggle-label'>Počet osôb:</span>"
+            f"<div class='toggle pp-toggle' role='tablist'>{buttons}</div></div>")
+
+
+def _primary_hero_html(rows):
+    """Zvýraznený náš let navrchu: fixný termín + cena/os + počítadlo osôb."""
+    info = _primary_trip_now(rows)
+    if not info:
+        return ""
+    t = config.PRIMARY_TRIP
+    pp = info["total"]
+    return f"""<section class='hero'>
+  <div class='hero-eyebrow'>Náš let</div>
+  <h2 class='hero-title'>Z {html.escape(_origin_from(t['origin']))} do {html.escape(_dest_to(t['destination']))}
+    · {_fmt_date(t['out'])} → {_fmt_date(t['ret'])}</h2>
+  <p class='caption'>{info['nights']} nocí · fixný termín · Ryanair {html.escape(t['origin'])}↔{html.escape(t['destination'])}</p>
+  {_persons_toggle_html()}
+  <div class='hero-card' data-pp='{pp:.2f}'>
+    <div class='hero-price'>{pp:.0f} €<span class='cmp-unit'> /os</span></div>
+    <div class='hero-total js-total'>Spolu {_DEFAULT_PERSONS} os.: <b>{pp * _DEFAULT_PERSONS:.0f} €</b></div>
+  </div>
+  <div class='hero-legs'>Odlet {_fmt_date(t['out'])}: <b>{info['out_price']:.0f} €</b>
+    &nbsp;·&nbsp; Návrat {_fmt_date(t['ret'])}: <b>{info['ret_price']:.0f} €</b></div>
+</section>"""
+
+
 def _dest_panel(rows, dest, index):
     """Panel destinácie: hore porovnanie odletísk, pod tým detaily na plnú šírku."""
     origins = [o for o in _all_origins() if any(_row_origin(r) == o for r in rows)]
     if not origins:
         origins = [config.ORIGIN]
     hidden = "" if index == 0 else " hidden"
+    # Náš hlavný let (fixný termín) navrchu, len na jeho destinácii
+    hero = _primary_hero_html(rows) if dest["code"] == config.PRIMARY_TRIP.get("destination") else ""
     # Porovnávacia hlavička len keď je čo porovnávať (2+ odletiská)
     comparison = _comparison_section_html(rows, dest["code"], origins) if len(origins) > 1 else ""
     details = "".join(_origin_block(rows, dest["code"], o) for o in origins)
     return f"""<div class='dest-panel' data-dest='{html.escape(dest['code'])}'{hidden}>
+  {hero}
   {comparison}
   <div class='origin-stack'>
     {details}
