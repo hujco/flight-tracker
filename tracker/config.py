@@ -6,7 +6,7 @@ MONTH = 9
 CURRENCY = "EUR"
 
 # Dĺžka pobytu pre round-trip: prepínateľné presety (počet nocí, vrátane hraníc)
-# Trasa VIE↔EFL lieta len Pi/So/Po → realistické presné dĺžky pobytu
+# Trasa VIE↔PVK lieta len Pi/So/Po → realistické presné dĺžky pobytu
 STAY_PRESETS = [
     {"label": "7 nocí", "min_nights": 7, "max_nights": 7},
     {"label": "9 nocí", "min_nights": 9, "max_nights": 9},
@@ -40,9 +40,7 @@ REFERENCE_PER_PERSON_EUR = round((REFERENCE_PRICE_EUR - EXTRAS_EUR) / PERSONS, 2
 # OUT = tam (origin->destinacia), RET = spat (destinacia->origin)
 ORIGIN = "VIE"
 DESTINATIONS = [
-    {"code": "EFL", "label": "Kefalonia"},
     {"code": "PVK", "label": "Lefkada"},    # letisko Preveza/Aktion
-    {"code": "ZTH", "label": "Zakyntos"},
 ]
 
 # Druhé odletisko: Budapešť (BUD). Na rozdiel od VIE (sken celého mesiaca naprieč

@@ -87,12 +87,11 @@ def _row(ts, dest, direction, fdate, price, origin="VIE"):
             "flight_date": fdate, "flight_number": "FR", "price": price}
 
 
-def test_maybe_notify_per_destination(monkeypatch):
-    # EFL klesne na nove minimum pod cielom, ZTH ostava draha
+def test_maybe_notify_fires_for_lefkada(monkeypatch):
+    # VIE Lefkada klesne na nove minimum pod cielom -> alert
     rows = [
-        _row("t1", "EFL", "OUT", "2026-09-07", 70.0), _row("t1", "EFL", "RET", "2026-09-14", 70.0),  # 140
-        _row("t2", "EFL", "OUT", "2026-09-07", 50.0), _row("t2", "EFL", "RET", "2026-09-14", 55.0),  # 105 (nove min < 130)
-        _row("t2", "ZTH", "OUT", "2026-09-07", 100.0), _row("t2", "ZTH", "RET", "2026-09-14", 100.0),  # 200
+        _row("t1", "PVK", "OUT", "2026-09-07", 70.0), _row("t1", "PVK", "RET", "2026-09-14", 70.0),  # 140
+        _row("t2", "PVK", "OUT", "2026-09-07", 50.0), _row("t2", "PVK", "RET", "2026-09-14", 55.0),  # 105 (nove min < 130)
     ]
     sent = []
 
@@ -107,9 +106,8 @@ def test_maybe_notify_per_destination(monkeypatch):
     monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
     ok, msg = notify.maybe_notify(rows, session=S())
     assert ok is True
-    assert len(sent) == 1                 # len VIE EFL
-    assert "Kefalonia" in sent[0]
-    assert "VIE↔Kefalonia" in sent[0]
+    assert len(sent) == 1
+    assert "VIE↔Lefkada" in sent[0]
 
 
 def test_maybe_notify_separates_origins(monkeypatch):

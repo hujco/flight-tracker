@@ -385,28 +385,35 @@ def build_report_html(rows):
     if not rows:
         return (f"<!DOCTYPE html><html lang='sk'><head><meta charset='utf-8'>"
                 f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
-                f"<title>Ryanair VIE↔EFL tracker</title><style>{_CSS}</style></head>"
+                f"<title>Ryanair Lefkada tracker</title><style>{_CSS}</style></head>"
                 f"<body><div class='wrap'><header><div class='eyebrow'>Ryanair price tracker</div>"
                 f"<h1>Vývoj cien leteniek</h1></header>"
                 f"<section><p class='empty'>Zatiaľ žiadne dáta</p></section></div></body></html>")
 
     updated = stats.latest_observed_at(rows)
-    dest_buttons = "".join(
-        f"<button class='dest-btn{' active' if i == 0 else ''}' data-dest='{html.escape(d['code'])}'>"
-        f"{html.escape(d['label'])}</button>"
-        for i, d in enumerate(config.DESTINATIONS)
-    )
     panels = "".join(
         _dest_panel([r for r in rows if r.get("destination") == d["code"]], d, i)
         for i, d in enumerate(config.DESTINATIONS)
     )
+    # Prepínač destinácií má zmysel len pri viacerých destináciách; pri jednej
+    # (Lefkada) by len zavadzal, tak ho vôbec nezobrazujeme.
+    if len(config.DESTINATIONS) > 1:
+        dest_buttons = "".join(
+            f"<button class='dest-btn{' active' if i == 0 else ''}' data-dest='{html.escape(d['code'])}'>"
+            f"{html.escape(d['label'])}</button>"
+            for i, d in enumerate(config.DESTINATIONS)
+        )
+        dest_toggle = (f"<div class='toggle-wrap'><span class='toggle-label'>Destinácia:</span>"
+                       f"<div class='toggle' role='tablist'>{dest_buttons}</div></div>")
+    else:
+        dest_toggle = ""
 
     return f"""<!DOCTYPE html>
 <html lang='sk'>
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
-<title>Ryanair VIE tracker</title>
+<title>Ryanair Lefkada tracker</title>
 {_PLOTLY_JS}
 <style>{_CSS}</style>
 </head>
@@ -414,11 +421,10 @@ def build_report_html(rows):
 <div class='wrap'>
   <header>
     <div class='eyebrow'>Ryanair price tracker · september 2026</div>
-    <h1>Viedeň &amp; Budapešť → grécke ostrovy</h1>
+    <h1>Viedeň &amp; Budapešť → Lefkada</h1>
     <div class='updated'>Posledná aktualizácia: {html.escape(_fmt_dt(updated))}</div>
   </header>
-  <div class='toggle-wrap'><span class='toggle-label'>Destinácia:</span>
-    <div class='toggle' role='tablist'>{dest_buttons}</div></div>
+  {dest_toggle}
   {panels}
   <footer>Dáta: services-api.ryanair.com · generované lokálne, bez LLM</footer>
 </div>
