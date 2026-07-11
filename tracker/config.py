@@ -27,7 +27,7 @@ INCLUDE_EXTRAS = False
 
 # Telegram alert: pošli keď najlacnejšia letenka/os (naprieč STAY_PRESETS) klesne na
 # nové minimum A zároveň je ≤ ALERT_TARGET_EUR. Creds idú cez env (GitHub Secrets).
-ALERT_TARGET_EUR = 130.0
+ALERT_TARGET_EUR = 140.0
 REPORT_URL = "https://hujco.github.io/flight-tracker/"
 # chat id nie je tajné (bez tokenu sa s ním nedá nič) → môže byť tu; token ostáva v Secrets
 TELEGRAM_CHAT_ID = "8804095194"
@@ -54,9 +54,9 @@ BUD_DESTINATIONS = [
     # {"code": "EFL", "label": "Kefalonia"},
 ]
 # Každý trip = presný odlet + presný návrat. Pridať/odobrať = jeden riadok.
+# Sledujeme LEN náš termín — žiadne alternatívne dátumy (nechceme falošné signály).
 BUD_TRIPS = [
-    {"out": "2026-09-06", "ret": "2026-09-13"},   # 7 nocí
-    {"out": "2026-09-01", "ret": "2026-09-08"},   # 7 nocí (voliteľné)
+    {"out": "2026-09-06", "ret": "2026-09-13"},   # 7 nocí — náš let
 ]
 
 # Náš hlavný let: zvýrazní sa navrchu reportu (fixný termín, ktorý reálne riešime).

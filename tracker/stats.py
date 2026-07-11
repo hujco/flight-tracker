@@ -71,6 +71,32 @@ def cheapest_roundtrip_now(rows, max_results=10, min_nights=0, max_nights=None):
     return combos[:max_results]
 
 
+def primary_trip_over_time(rows, trip, default_origin=None):
+    """Cena JEDNÉHO fixného letu (origin+dest + presné out/ret dni) pri každom meraní.
+
+    Zámerne nepáruje naprieč mesiacom (to robí cheapest_roundtrip_now) — vracia
+    striktne náš termín, aby hore/alert nikdy neukázali cenu iného dátumu.
+    Návrat: [{observed_at, out_price, ret_price, total}, ...] zoradené v čase.
+    """
+    legs = defaultdict(lambda: {"OUT": [], "RET": []})
+    for r in rows:
+        origin = r.get("origin") or default_origin
+        if origin != trip["origin"] or r.get("destination") != trip["destination"]:
+            continue
+        if r["direction"] == "OUT" and r["flight_date"] == trip["out"]:
+            legs[r["observed_at"]]["OUT"].append(r["price"])
+        elif r["direction"] == "RET" and r["flight_date"] == trip["ret"]:
+            legs[r["observed_at"]]["RET"].append(r["price"])
+    series = []
+    for ts in sorted(legs):
+        out, ret = legs[ts]["OUT"], legs[ts]["RET"]
+        if out and ret:
+            op, rp = min(out), min(ret)
+            series.append({"observed_at": ts, "out_price": op, "ret_price": rp,
+                           "total": round(op + rp, 2)})
+    return series
+
+
 def cheapest_roundtrip_over_time(rows, min_nights=0, max_nights=None):
     by_ts = defaultdict(list)
     for r in rows:

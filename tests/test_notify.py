@@ -87,48 +87,64 @@ def _row(ts, dest, direction, fdate, price, origin="VIE"):
             "flight_date": fdate, "flight_number": "FR", "price": price}
 
 
-def test_maybe_notify_fires_for_lefkada(monkeypatch):
-    # VIE Lefkada klesne na nove minimum pod cielom -> alert
+class _CaptureSession:
+    def __init__(self):
+        self.sent = []
+    def post(self, url, data=None, timeout=None):
+        self.sent.append(data["text"])
+        class R:
+            def raise_for_status(self_): pass
+            def json(self_): return {"ok": True}
+        return R()
+
+
+def test_maybe_notify_fires_for_our_trip(monkeypatch):
+    # Nas let (BUD 6->13.9) klesne na nove minimum pod cielom (<140) -> alert
     rows = [
-        _row("t1", "PVK", "OUT", "2026-09-07", 70.0), _row("t1", "PVK", "RET", "2026-09-14", 70.0),  # 140
-        _row("t2", "PVK", "OUT", "2026-09-07", 50.0), _row("t2", "PVK", "RET", "2026-09-14", 55.0),  # 105 (nove min < 130)
+        _row("t1", "PVK", "OUT", "2026-09-06", 80.0, origin="BUD"), _row("t1", "PVK", "RET", "2026-09-13", 80.0, origin="BUD"),  # 160 > 140
+        _row("t2", "PVK", "OUT", "2026-09-06", 60.0, origin="BUD"), _row("t2", "PVK", "RET", "2026-09-13", 65.0, origin="BUD"),  # 125 (nove min < 140)
     ]
-    sent = []
-
-    class S:
-        def post(self, url, data=None, timeout=None):
-            sent.append(data["text"])
-            class R:
-                def raise_for_status(self_): pass
-                def json(self_): return {"ok": True}
-            return R()
-
+    s = _CaptureSession()
     monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
-    ok, msg = notify.maybe_notify(rows, session=S())
+    ok, msg = notify.maybe_notify(rows, session=s)
     assert ok is True
-    assert len(sent) == 1
-    assert "VIE↔Lefkada" in sent[0]
+    assert len(s.sent) == 1
+    assert "BUD↔Lefkada" in s.sent[0] and "125 €/os" in s.sent[0]
 
 
-def test_maybe_notify_separates_origins(monkeypatch):
-    # rovnaka destinacia (PVK/Lefkada), ale VIE draha a BUD lacna -> alert len pre BUD
+def test_maybe_notify_only_our_date_not_cheaper_other_date(monkeypatch):
+    # Iny datum (1->8) je lacnejsi, ale alert musi ist LEN podla nasho terminu (6->13).
     rows = [
-        _row("t1", "PVK", "OUT", "2026-09-06", 100.0, origin="VIE"), _row("t1", "PVK", "RET", "2026-09-13", 100.0, origin="VIE"),  # VIE 200
-        _row("t1", "PVK", "OUT", "2026-09-06", 40.0, origin="BUD"),  _row("t1", "PVK", "RET", "2026-09-13", 40.0, origin="BUD"),   # BUD 80 < 130
+        _row("t1", "PVK", "OUT", "2026-09-01", 20.0, origin="BUD"), _row("t1", "PVK", "RET", "2026-09-08", 20.0, origin="BUD"),  # iny termin 40
+        _row("t1", "PVK", "OUT", "2026-09-06", 60.0, origin="BUD"), _row("t1", "PVK", "RET", "2026-09-13", 65.0, origin="BUD"),  # nas termin 125 < 140
     ]
-    sent = []
-
-    class S:
-        def post(self, url, data=None, timeout=None):
-            sent.append(data["text"])
-            class R:
-                def raise_for_status(self_): pass
-                def json(self_): return {"ok": True}
-            return R()
-
+    s = _CaptureSession()
     monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
-    ok, msg = notify.maybe_notify(rows, session=S())
-    assert ok is True
-    assert len(sent) == 1
-    assert "BUD↔Lefkada" in sent[0]       # BUD, nie VIE; cena 80 (nesparovana s VIE)
-    assert "80 €/os" in sent[0]
+    ok, msg = notify.maybe_notify(rows, session=s)
+    assert ok is True and len(s.sent) == 1
+    assert "125 €/os" in s.sent[0]        # nas termin, nie 40 z ineho datumu
+    assert "06.09.2026" in s.sent[0] and "13.09.2026" in s.sent[0]
+    # alt-datum (1->8) sa nesmie objavit v sprave
+    assert "01.09.2026" not in s.sent[0] and "08.09.2026" not in s.sent[0]
+
+
+def test_maybe_notify_ignores_other_origin(monkeypatch):
+    # VIE lacna na nasich datumoch, ale nas let je z BUD -> VIE nesmie spustit alert.
+    rows = [
+        _row("t1", "PVK", "OUT", "2026-09-06", 30.0, origin="VIE"), _row("t1", "PVK", "RET", "2026-09-13", 30.0, origin="VIE"),  # VIE 60, nie nas let
+    ]
+    s = _CaptureSession()
+    monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
+    ok, msg = notify.maybe_notify(rows, session=s)
+    assert ok is False and len(s.sent) == 0
+
+
+def test_maybe_notify_none_above_target(monkeypatch):
+    # Nas let je nad cielom (140) -> ziadny alert (toto bola stara chyba: 130 < 155)
+    rows = [
+        _row("t1", "PVK", "OUT", "2026-09-06", 80.0, origin="BUD"), _row("t1", "PVK", "RET", "2026-09-13", 75.0, origin="BUD"),  # 155 > 140
+    ]
+    s = _CaptureSession()
+    monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
+    ok, msg = notify.maybe_notify(rows, session=s)
+    assert ok is False and len(s.sent) == 0

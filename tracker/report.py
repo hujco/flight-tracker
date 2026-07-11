@@ -88,6 +88,20 @@ def _origin_stay_presets(origin_code):
     return config.STAY_PRESETS
 
 
+def _is_primary(origin_code, out_date, ret_date):
+    """Je to presne náš let (odletisko + oba fixné dátumy)?"""
+    t = config.PRIMARY_TRIP
+    return (origin_code == t["origin"] and out_date == t["out"]
+            and ret_date == t["ret"])
+
+
+def _trip_chip(origin_code, out_date, ret_date):
+    """Odznak pri každej cene: náš termín vs. iný termín (nikdy nie nejasné)."""
+    if _is_primary(origin_code, out_date, ret_date):
+        return "<span class='chip chip-our'>náš termín</span>"
+    return "<span class='chip chip-alt'>iný termín</span>"
+
+
 def _price_evolution_fig(rows, dest_code, origin_code):
     """Dve prehľadné čiary: najlacnejší odlet a najlacnejší návrat v čase."""
     fig = go.Figure()
@@ -134,13 +148,13 @@ def _best_over_time_fig(rows, min_nights, max_nights):
     return fig
 
 
-def _chart_html(fig):
+def _chart_html(fig, height="380px"):
     # plotly.js sa načíta raz v <head>, takže tu nikdy nevkladáme knižnicu
     return fig.to_html(
         full_html=False,
         include_plotlyjs=False,
         default_width="100%",
-        default_height="380px",
+        default_height=height,
         config={"displayModeBar": False, "responsive": True},
     )
 
@@ -196,14 +210,18 @@ def _combos_table_html(rows, min_nights, max_nights, dest_code, origin_code):
         rows, min_nights=min_nights, max_nights=max_nights)
     head = (f"<tr><th>Odlet ({origin_code}→{dest_code})</th><th>Cena tam</th>"
             f"<th>Návrat ({dest_code}→{origin_code})</th><th>Cena späť</th><th>Nocí</th><th>Spolu</th></tr>")
-    body = "".join(
-        f"<tr class='{ 'best' if i == 0 else '' }'>"
-        f"<td>{_fmt_date(c['out_date'])}</td><td>{c['out_price']:.2f} €</td>"
-        f"<td>{_fmt_date(c['ret_date'])}</td><td>{c['ret_price']:.2f} €</td>"
-        f"<td>{c['nights']}</td>"
-        f"<td class='total'>{c['total']:.2f} €</td></tr>"
-        for i, c in enumerate(combos)
-    )
+
+    def row(i, c):
+        ours = _is_primary(origin_code, c["out_date"], c["ret_date"])
+        cls = " ".join(x for x in ("best" if i == 0 else "", "our" if ours else "") if x)
+        mark = "<span class='chip chip-our'>náš termín</span>" if ours else ""
+        return (f"<tr class='{cls}'>"
+                f"<td>{_fmt_date(c['out_date'])}{mark}</td><td>{c['out_price']:.2f} €</td>"
+                f"<td>{_fmt_date(c['ret_date'])}</td><td>{c['ret_price']:.2f} €</td>"
+                f"<td>{c['nights']}</td>"
+                f"<td class='total'>{c['total']:.2f} €</td></tr>")
+
+    body = "".join(row(i, c) for i, c in enumerate(combos))
     return f"<table class='combos'><thead>{head}</thead><tbody>{body}</tbody></table>"
 
 
@@ -256,6 +274,35 @@ h1 { font-size: 30px; font-weight: 700; margin: 6px 0 4px; color: #F8FAFC; }
 .hero-total b { color: #F8FAFC; font-size: 22px; }
 .hero-legs { font-family: 'Fira Code', monospace; font-size: 13px; color: #94A3B8; }
 .hero-legs b { color: #E2E8F0; }
+.hero-low { font-family: 'Fira Code', monospace; font-size: 13px; color: #94A3B8;
+  margin-bottom: 6px; }
+.hero-low b { color: #E2E8F0; }
+.hero-low-hit { color: #4ADE80; font-weight: 600; }
+.hero-chart { margin-top: 8px; }
+
+/* Odznak termínu — pri každej cene je jasné, či je to náš dátum */
+.chip { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px;
+  font: 600 11px 'Fira Sans', sans-serif; letter-spacing: .02em; vertical-align: 1px; }
+.chip-our { background: rgba(245,158,11,0.18); color: #FBBF24;
+  border: 1px solid rgba(245,158,11,0.45); }
+.chip-alt { background: rgba(148,163,184,0.12); color: #94A3B8;
+  border: 1px solid rgba(148,163,184,0.28); }
+
+/* Iné termíny: potlačené do úzadia, ožijú až pri interakcii */
+.secondary { opacity: .62; filter: saturate(.75);
+  transition: opacity .25s ease, filter .25s ease; }
+.secondary:hover, .secondary:focus-within { opacity: 1; filter: none; }
+/* na dotykových zariadeniach niet hoveru → drž to čitateľné, len jemne stlmené */
+@media (hover: none) { .secondary { opacity: .85; filter: saturate(.9); } }
+.sep { display: flex; align-items: center; gap: 14px; margin: 34px 0 8px; }
+.sep::before, .sep::after { content: ""; flex: 1; height: 1px;
+  background: rgba(148,163,184,0.20); }
+.sep-text { color: #94A3B8; font-size: 12px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; white-space: nowrap; }
+.sep-note { color: #94A3B8; font-size: 13px; text-align: center; margin: 0 0 22px; }
+.sep-note b { color: #CBD5E1; }
+table.combos tr.our td { background: rgba(245,158,11,0.10);
+  box-shadow: inset 3px 0 0 #F59E0B; }
 
 /* Porovnávacia hlavička (odletiská) */
 .cmp-section { background: linear-gradient(180deg, rgba(30,41,59,0.55), rgba(15,23,42,0.5));
@@ -511,12 +558,13 @@ def _comparison_section_html(rows, dest_code, origins):
             price = f"{b['total']:.0f} €"
             sub = (f"{_fmt_date(b['out_date'])} → {_fmt_date(b['ret_date'])} · "
                    f"{b['nights']} nocí")
+            chip = _trip_chip(o, b["out_date"], b["ret_date"])
             pp = b["total"]
             data_pp = f" data-pp='{pp:.2f}'"
             total = (f"<div class='cmp-total js-total'>Spolu {_DEFAULT_PERSONS} os.: "
                      f"<b>{pp * _DEFAULT_PERSONS:.0f} €</b></div>")
         else:
-            price, sub, data_pp, total = "—", "zatiaľ bez dát", "", \
+            price, sub, chip, data_pp, total = "—", "zatiaľ bez dát", "", "", \
                 "<div class='cmp-total js-total'></div>"
         badge = "<span class='cmp-badge'>najlacnejšie</span>" if win else ""
         cards.append(
@@ -524,7 +572,7 @@ def _comparison_section_html(rows, dest_code, origins):
             f"<div class='cmp-org'>Z {html.escape(_origin_from(o))} "
             f"<span class='cmp-code'>{html.escape(o)}</span>{badge}</div>"
             f"<div class='cmp-price'>{price}<span class='cmp-unit'> /os</span></div>"
-            f"<div class='cmp-sub'>{html.escape(sub)}</div>"
+            f"<div class='cmp-sub'>{html.escape(sub)}{chip}</div>"
             f"{total}</div>")
 
     verdict = ""
@@ -541,7 +589,8 @@ def _comparison_section_html(rows, dest_code, origins):
     verdict_html = f"<p class='cmp-verdict'>{verdict}</p>" if verdict else ""
     return f"""<section class='cmp-section'>
   <h2>Odkiaľ sa oplatí letieť do {html.escape(_dest_to(dest_code))}?</h2>
-  <p class='caption'>Najlacnejší {nights_lbl}-nocový round-trip za 1 os. — priame porovnanie odletísk.</p>
+  <p class='caption'>Najlacnejší {nights_lbl}-nocový round-trip za 1 os. naprieč <b>celým septembrom</b> —
+    dátum môže byť iný než náš. Slúži len na porovnanie odletísk.</p>
   <div class='cmp-grid'>{''.join(cards)}</div>
   {verdict_html}
   <div class='cmp-chart'>
@@ -551,25 +600,38 @@ def _comparison_section_html(rows, dest_code, origins):
 </section>"""
 
 
+def _primary_trip_series(rows):
+    """Cena NÁŠHO fixného letu v čase (delegované do stats — jeden zdroj pravdy)."""
+    return stats.primary_trip_over_time(rows, config.PRIMARY_TRIP, config.ORIGIN)
+
+
 def _primary_trip_now(rows):
     """Cena nášho hlavného fixného letu (config.PRIMARY_TRIP) pri poslednom meraní."""
+    series = _primary_trip_series(rows)
+    if not series:
+        return None
     t = config.PRIMARY_TRIP
-    ts = stats.latest_observed_at(rows)
-    if not ts:
-        return None
-
-    def leg_min(direction, day):
-        prices = [r["price"] for r in rows
-                  if r["observed_at"] == ts and _row_origin(r) == t["origin"]
-                  and r["destination"] == t["destination"]
-                  and r["direction"] == direction and r["flight_date"] == day]
-        return min(prices) if prices else None
-
-    op, rp = leg_min("OUT", t["out"]), leg_min("RET", t["ret"])
-    if op is None or rp is None:
-        return None
     nights = (date.fromisoformat(t["ret"]) - date.fromisoformat(t["out"])).days
-    return {"out_price": op, "ret_price": rp, "total": round(op + rp, 2), "nights": nights}
+    return {**series[-1], "nights": nights,
+            "low": min(s["total"] for s in series)}
+
+
+def _primary_trip_fig(series):
+    """Vývoj ceny nášho termínu — samostatný graf, aby hero nepotreboval nič nižšie."""
+    xs = [s["observed_at"] for s in series]
+    ys = [s["total"] for s in series]
+    fig = go.Figure(go.Scatter(
+        x=xs, y=ys, mode="lines+markers", name="Náš termín",
+        line=dict(color=_AMBER, width=3), marker=dict(color=_AMBER, size=7),
+        fill="tozeroy", fillcolor="rgba(245,158,11,0.10)"))
+    fig = _style(fig)
+    fig.update_layout(showlegend=False, margin=dict(l=55, r=20, t=20, b=45))
+    if xs:
+        fig.add_hline(
+            y=config.REFERENCE_PER_PERSON_EUR, line_dash="dash", line_color="#94A3B8",
+            annotation_text=f"pred 2 r.: ~{config.REFERENCE_PER_PERSON_EUR:.0f} €",
+            annotation_position="top left", annotation_font_color="#CBD5E1")
+    return fig
 
 
 def _persons_toggle_html():
@@ -583,12 +645,31 @@ def _persons_toggle_html():
 
 
 def _primary_hero_html(rows):
-    """Zvýraznený náš let navrchu: fixný termín + cena/os + počítadlo osôb."""
+    """Zvýraznený náš let navrchu: fixný termín + cena/os + počítadlo osôb.
+
+    Ukazuje VÝHRADNE cenu nášho termínu (nikdy nie najlacnejšiu naprieč mesiacom),
+    a má vlastný graf, aby sa dalo rozhodnúť bez pozerania na iné termíny nižšie.
+    """
+    series = _primary_trip_series(rows)
     info = _primary_trip_now(rows)
     if not info:
         return ""
     t = config.PRIMARY_TRIP
-    pp = info["total"]
+    pp, low = info["total"], info["low"]
+
+    high = max(s["total"] for s in series)
+    if high - low < 0.005:
+        # cena sa ešte nikdy nepohla → žiadny zelený "kupuj teraz" signál
+        low_html = (f"<div class='hero-low'>Cena sa zatiaľ nehla "
+                    f"({len(series)} meraní)</div>")
+    elif pp <= low + 0.005:
+        low_html = ("<div class='hero-low hero-low-hit'>Teraz je najnižšie, čo sme videli"
+                    f" · {low:.0f} €/os</div>")
+    else:
+        low_html = (f"<div class='hero-low'>Najnižšie doteraz: <b>{low:.0f} €/os</b>"
+                    f" · teraz +{pp - low:.0f} €</div>")
+
+    chart = _chart_html(_primary_trip_fig(series), height="260px")
     return f"""<section class='hero'>
   <div class='hero-eyebrow'>Náš let</div>
   <h2 class='hero-title'>Z {html.escape(_origin_from(t['origin']))} do {html.escape(_dest_to(t['destination']))}
@@ -599,9 +680,22 @@ def _primary_hero_html(rows):
     <div class='hero-price'>{pp:.0f} €<span class='cmp-unit'> /os</span></div>
     <div class='hero-total js-total'>Spolu {_DEFAULT_PERSONS} os.: <b>{pp * _DEFAULT_PERSONS:.0f} €</b></div>
   </div>
+  {low_html}
   <div class='hero-legs'>Odlet {_fmt_date(t['out'])}: <b>{info['out_price']:.0f} €</b>
     &nbsp;·&nbsp; Návrat {_fmt_date(t['ret'])}: <b>{info['ret_price']:.0f} €</b></div>
+  <div class='hero-chart'>{chart}</div>
 </section>"""
+
+
+def _secondary_html(inner):
+    """Všetko, čo NIE je náš termín — vizuálne aj textovo oddelené do úzadia."""
+    t = config.PRIMARY_TRIP
+    return f"""<div class='secondary'>
+  <div class='sep'><span class='sep-text'>Iné termíny · len orientačne</span></div>
+  <p class='sep-note'>Ceny nižšie sú za <b>iné dátumy</b> než náš let
+    ({_fmt_date(t['out'])} → {_fmt_date(t['ret'])}). Môžu byť lacnejšie — ale nekupuj podľa nich.</p>
+  {inner}
+</div>"""
 
 
 def _dest_panel(rows, dest, index):
@@ -615,12 +709,12 @@ def _dest_panel(rows, dest, index):
     # Porovnávacia hlavička len keď je čo porovnávať (2+ odletiská)
     comparison = _comparison_section_html(rows, dest["code"], origins) if len(origins) > 1 else ""
     details = "".join(_origin_block(rows, dest["code"], o) for o in origins)
+    rest = f"{comparison}<div class='origin-stack'>{details}</div>"
+    # Keď hore stojí náš termín, všetko ostatné patrí pod oddeľovač do úzadia.
+    # Bez hera (žiadne dáta pre náš let) niet od čoho oddeľovať → zobraz normálne.
+    body = f"{hero}{_secondary_html(rest)}" if hero else rest
     return f"""<div class='dest-panel' data-dest='{html.escape(dest['code'])}'{hidden}>
-  {hero}
-  {comparison}
-  <div class='origin-stack'>
-    {details}
-  </div>
+  {body}
 </div>"""
 
 

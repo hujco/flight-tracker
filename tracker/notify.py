@@ -41,6 +41,40 @@ def cheapest_per_observation(rows, presets):
     return result
 
 
+def _dest_label(code):
+    for lst in (config.DESTINATIONS, getattr(config, "BUD_DESTINATIONS", [])):
+        for d in lst:
+            if d["code"] == code:
+                return d["label"]
+    return code
+
+
+def detect_primary_trip_low(rows, trip, target, default_origin=None):
+    """Nové cenové minimum PRE NÁŠ let (fixný termín), alebo None.
+
+    Sleduje výhradne trip["out"]/trip["ret"] daného odletiska — nikdy najlacnejšiu
+    kombináciu naprieč mesiacom, aby alert neposlal cenu iného dátumu.
+    """
+    series = stats.primary_trip_over_time(rows, trip, default_origin)
+    if not series:
+        return None
+    latest = series[-1]
+    price = latest["total"]
+    if price > target:
+        return None
+    prev = [s["total"] for s in series[:-1]]
+    if prev and price >= min(prev):
+        return None  # nie je striktne nové minimum
+    nights = (date.fromisoformat(trip["ret"]) - date.fromisoformat(trip["out"])).days
+    return {
+        "price": price,
+        "observed_at": latest["observed_at"],
+        "combo": {"out_date": trip["out"], "ret_date": trip["ret"],
+                  "nights": nights, "label": f"{nights} nocí"},
+        "prev_low": min(prev) if prev else None,
+    }
+
+
 def detect_new_low(rows, presets, target):
     """Vráti info o novom minime pod cieľom, alebo None.
 
@@ -97,41 +131,27 @@ def send_telegram(token, chat_id, text, session=None):
     return resp.json()
 
 
-def _campaigns():
-    """(origin, destinácie, stay-presety) pre každé sledované odletisko."""
-    camps = [(config.ORIGIN, config.DESTINATIONS, config.STAY_PRESETS)]
-    if getattr(config, "BUD_TRIPS", None):
-        camps.append((config.BUD_ORIGIN, config.BUD_DESTINATIONS, config.BUD_STAY_PRESETS))
-    return camps
-
-
 def maybe_notify(rows, session=None):
-    """Pre každé odletisko × destináciu zisti nové minimum pod cieľom a pošli Telegram."""
+    """Alert LEN pre náš let (config.PRIMARY_TRIP): nové minimum pod cieľom → Telegram.
+
+    Sledujeme jediný fixný termín, takže upozorňujeme výhradne naň — nikdy nie na
+    lacný iný dátum (to bola presne tá mätúca vec, ktorú nechceme).
+    """
     token = os.environ.get("TELEGRAM_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID") or config.TELEGRAM_CHAT_ID
-    msgs = []
-    sent_any = False
-    for origin, destinations, presets in _campaigns():
-        for dst in destinations:
-            drows = [r for r in rows
-                     if r.get("destination") == dst["code"]
-                     and (r.get("origin") or config.ORIGIN) == origin]
-            info = detect_new_low(drows, presets, config.ALERT_TARGET_EUR)
-            if info is None:
-                continue
-            tag = f"{origin}↔{dst['label']}"
-            if not token or not chat_id:
-                msgs.append(f"{tag}: nové min {info['price']:.0f} €, ale chýba TELEGRAM_TOKEN")
-                continue
-            text = format_message(info, dst["label"], origin,
-                                  config.REFERENCE_PER_PERSON_EUR,
-                                  config.ALERT_TARGET_EUR, config.REPORT_URL)
-            send_telegram(token, chat_id, text, session=session)
-            sent_any = True
-            msgs.append(f"{tag}: poslaný alert {info['price']:.0f} €/os")
-    if not msgs:
+    trip = config.PRIMARY_TRIP
+    info = detect_primary_trip_low(rows, trip, config.ALERT_TARGET_EUR, config.ORIGIN)
+    if info is None:
         return False, "žiadne nové minimum pod cieľom"
-    return sent_any, "; ".join(msgs)
+    dest_label = _dest_label(trip["destination"])
+    tag = f"{trip['origin']}↔{dest_label}"
+    if not token or not chat_id:
+        return False, f"{tag}: nové min {info['price']:.0f} €, ale chýba TELEGRAM_TOKEN"
+    text = format_message(info, dest_label, trip["origin"],
+                          config.REFERENCE_PER_PERSON_EUR,
+                          config.ALERT_TARGET_EUR, config.REPORT_URL)
+    send_telegram(token, chat_id, text, session=session)
+    return True, f"{tag}: poslaný alert {info['price']:.0f} €/os"
 
 
 def send_test(session=None):
