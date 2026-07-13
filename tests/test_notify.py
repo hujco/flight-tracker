@@ -55,6 +55,15 @@ def test_format_message_includes_destination_origin_and_tier():
     assert "VIE↔Zakyntos" in msg2 and "Dobrá cena" in msg2   # 125 > 117
 
 
+def test_format_message_includes_seat_hint():
+    # alert sa posiela len pri novom minime pod cielom = najlacnejsi fare bucket,
+    # takze sprava musi upozornit ze moze zostavat len par sedadiel
+    info = {"price": 110.0, "observed_at": "t1", "prev_low": 130.0,
+            "combo": {"out_date": "2026-09-07", "ret_date": "2026-09-14", "nights": 7, "label": "7 nocí"}}
+    msg = notify.format_message(info, "Lefkada", "BUD", reference_per_person=117.0, target=130.0, report_url="http://x")
+    assert "len pár sedadiel" in msg
+
+
 class _FakeResp:
     def __init__(self):
         self.payload = {"ok": True}

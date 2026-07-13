@@ -115,6 +115,8 @@ def format_message(info, destination_label, origin_code, reference_per_person, t
     if info["prev_low"] is not None:
         lines.append(f"Predošlé minimum: {info['prev_low']:.0f} €/os")
     lines.append(f"Cieľ: ≤ {target:.0f} €/os")
+    # Nové minimum = najlacnejší fare bucket → typicky len pár voľných miest.
+    lines.append(f"⚠️ {config.SEATS_HINT}")
     lines.append(report_url)
     return "\n".join(lines)
 

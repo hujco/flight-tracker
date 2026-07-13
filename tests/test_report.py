@@ -116,6 +116,32 @@ def test_hero_flat_price_is_not_a_buy_signal():
     assert "hero-low-hit" not in hero
 
 
+def test_hero_at_min_warns_about_few_seats():
+    # teraz je na historickom minime (najlacnejsi fare bucket) -> varuj o sedadlach
+    older = [dict(r, observed_at="2026-06-29T14:00", price=r["price"] + 5) for r in _BUD_PRIMARY]
+    html = report.build_report_html(ROWS + older + _BUD_PRIMARY)
+    hero = html[html.index("class='hero'"):html.index("class='secondary'")]
+    assert "hero-low-hit" in hero
+    assert "len pár sedadiel" in hero
+
+
+def test_hero_above_min_no_seat_warning():
+    # cena je nad minimom -> ziadny "kupuj hned" bucket signal -> ziadne varovanie o sedadlach
+    older = [dict(r, observed_at="2026-06-29T14:00") for r in _BUD_PRIMARY]
+    now = [dict(r, price=r["price"] + 5) for r in _BUD_PRIMARY]
+    html = report.build_report_html(ROWS + older + now)
+    hero = html[html.index("class='hero'"):html.index("class='secondary'")]
+    assert "len pár sedadiel" not in hero
+
+
+def test_hero_flat_price_no_seat_warning():
+    # cena sa nikdy nepohla -> nevieme povedat ze je to najlacnejsi bucket -> ziadne varovanie
+    older = [dict(r, observed_at="2026-06-29T14:00") for r in _BUD_PRIMARY]
+    html = report.build_report_html(ROWS + older + _BUD_PRIMARY)
+    hero = html[html.index("class='hero'"):html.index("class='secondary'")]
+    assert "len pár sedadiel" not in hero
+
+
 def test_report_empty():
     assert "Zatiaľ žiadne dáta" in report.build_report_html([])
 

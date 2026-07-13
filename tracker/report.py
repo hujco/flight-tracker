@@ -278,6 +278,9 @@ h1 { font-size: 30px; font-weight: 700; margin: 6px 0 4px; color: #F8FAFC; }
   margin-bottom: 6px; }
 .hero-low b { color: #E2E8F0; }
 .hero-low-hit { color: #4ADE80; font-weight: 600; }
+.hero-seats { font-size: 13px; line-height: 1.4; color: #FBBF24; font-weight: 600;
+  background: rgba(245,158,11,0.10); border: 1px solid rgba(245,158,11,0.35);
+  border-radius: 8px; padding: 8px 12px; margin: 8px 0 6px; }
 .hero-chart { margin-top: 8px; }
 
 /* Odznak termínu — pri každej cene je jasné, či je to náš dátum */
@@ -664,7 +667,8 @@ def _primary_hero_html(rows):
                     f"({len(series)} meraní)</div>")
     elif pp <= low + 0.005:
         low_html = ("<div class='hero-low hero-low-hit'>Teraz je najnižšie, čo sme videli"
-                    f" · {low:.0f} €/os</div>")
+                    f" · {low:.0f} €/os</div>"
+                    f"<div class='hero-seats'>⚠️ {html.escape(config.SEATS_HINT)}</div>")
     else:
         low_html = (f"<div class='hero-low'>Najnižšie doteraz: <b>{low:.0f} €/os</b>"
                     f" · teraz +{pp - low:.0f} €</div>")

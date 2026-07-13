@@ -62,3 +62,13 @@ Destinácie a okno v `tracker/config.py` (`ORIGIN`, `DESTINATIONS`, `YEAR`, `MON
 ## Zdroj dát
 Verejný endpoint `services-api.ryanair.com/farfnd/v4/oneWayFares`, volaný deň po dni.
 Neoficiálny — Ryanair ho môže zmeniť. `seats_left` endpoint nevracia (ostáva NULL).
+
+### Prečo nemáme presný počet sedadiel
+Počet voľných miest („zostávajú len 2 sedadlá za túto cenu") vracia iný endpoint —
+`www.ryanair.com/api/booking/v4/.../availability` (`faresLeft`). Ten je za anti-botom
+(Akamai, HTTP 409 „Availability declined") a z cloud cronu / servera sa spoľahlivo
+volať nedá. Preto namiesto presného čísla používame **heuristiku**: keď je cena nášho
+letu na historickom minime (= najlacnejší fare bucket, ktorý typicky máva len pár
+miest), report aj Telegram alert pridajú upozornenie „over počet a rezervuj hneď"
+(text v `config.SEATS_HINT`). Nie je to presné číslo, ale rieši to reálnu otázku:
+_treba konať rýchlo?_

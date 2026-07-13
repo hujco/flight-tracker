@@ -32,6 +32,13 @@ REPORT_URL = "https://hujco.github.io/flight-tracker/"
 # chat id nie je tajné (bez tokenu sa s ním nedá nič) → môže byť tu; token ostáva v Secrets
 TELEGRAM_CHAT_ID = "8804095194"
 
+# Heuristika „málo sedadiel": Ryanair endpoint farfnd nevracia počet voľných miest
+# (seats_left ostáva NULL), a availability endpoint blokuje anti-bot. Keď je cena na
+# historickom minime, je to najlacnejší fare bucket — ten typicky máva len pár miest.
+# Presný počet nevieme, preto varujeme, nech používateľ over a rezervuje hneď.
+SEATS_HINT = ("Pri takejto cene u Ryanairu zvyčajne zostáva len pár sedadiel za túto "
+              "sumu — over počet a rezervuj hneď na ryanair.com.")
+
 # Referencia spred 2 rokov: celá suma za 2 osoby vrátane batožiny a miesteniek
 REFERENCE_PRICE_EUR = 301.0
 # Odvodená čistá letenka na osobu vtedy: (301 − extras) / osoby ≈ 116.61
