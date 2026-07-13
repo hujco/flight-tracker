@@ -116,6 +116,15 @@ def test_hero_flat_price_is_not_a_buy_signal():
     assert "hero-low-hit" not in hero
 
 
+def test_hero_persons_toggle_has_multiperson_caveat():
+    # cena/os × N je optimisticka (lead-in cena) -> pri prepinaci osob musi byt
+    # trvala poznamka, aj ked NIE sme na minime (jedno meranie = ziadny min signal)
+    html = report.build_report_html(ROWS + _BUD_PRIMARY)
+    hero = html[html.index("class='hero'"):html.index("class='secondary'")]
+    assert "Počet osôb" in hero
+    assert "Suma za viac osôb je orientačná" in hero
+
+
 def test_hero_at_min_warns_about_few_seats():
     # teraz je na historickom minime (najlacnejsi fare bucket) -> varuj o sedadlach
     older = [dict(r, observed_at="2026-06-29T14:00", price=r["price"] + 5) for r in _BUD_PRIMARY]

@@ -342,6 +342,7 @@ table.combos tr.our td { background: rgba(245,158,11,0.10);
   transition: background .2s, color .2s; }
 .pp-toggle .pp-btn.active { background: #F59E0B; color: #0B1120; }
 .pp-toggle .pp-btn:hover:not(.active) { color: #E2E8F0; }
+.pp-note { font-size: 12px; line-height: 1.4; color: #94A3B8; margin: 4px 0 2px; max-width: 46ch; }
 .cmp-verdict { margin: 14px 2px 2px; font-size: 15px; color: #E2E8F0; }
 .cmp-verdict b { color: #FBBF24; }
 .cmp-chart { margin-top: 14px; }
@@ -644,7 +645,8 @@ def _persons_toggle_html():
         for n in _PERSONS_OPTIONS
     )
     return (f"<div class='pp-wrap'><span class='toggle-label'>Počet osôb:</span>"
-            f"<div class='toggle pp-toggle' role='tablist'>{buttons}</div></div>")
+            f"<div class='toggle pp-toggle' role='tablist'>{buttons}</div></div>"
+            f"<div class='pp-note'>{html.escape(config.PERSONS_HINT)}</div>")
 
 
 def _primary_hero_html(rows):

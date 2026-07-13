@@ -39,6 +39,15 @@ TELEGRAM_CHAT_ID = "8804095194"
 SEATS_HINT = ("Pri takejto cene u Ryanairu zvyčajne zostáva len pár sedadiel za túto "
               "sumu — over počet a rezervuj hneď na ryanair.com.")
 
+# Prepínač „počet osôb" násobí cenu/os × N, lenže naša cena je lead-in (najlacnejšie
+# jedno sedadlo). Ryanair skoro nikdy nemá N miest za tú najnižšiu cenu, takže reálna
+# suma za viac osôb býva vyššia (ďalší cestujúci padne do drahšieho fare bucketu).
+# farfnd to nevie rozlíšiť (aj s adultPaxCount len násobí), presné číslo dá len
+# blokovaný availability endpoint — preto pri prepínači úprimná poznámka.
+PERSONS_HINT = ("Suma za viac osôb je orientačná: predpokladá, že toľko miest je za "
+                "najnižšiu cenu. Pri málo miestach ďalší cestujúci zaplatí viac — "
+                "over reálnu cenu na ryanair.com.")
+
 # Referencia spred 2 rokov: celá suma za 2 osoby vrátane batožiny a miesteniek
 REFERENCE_PRICE_EUR = 301.0
 # Odvodená čistá letenka na osobu vtedy: (301 − extras) / osoby ≈ 116.61
