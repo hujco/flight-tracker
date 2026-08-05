@@ -1,6 +1,6 @@
 # Ryanair Price Tracker (VIE ↔ EFL)
 
-Sleduje každú hodinu ceny letov Ryanair z Viedne na grécke ostrovy
+Sleduje každé 2 hodiny ceny letov Ryanair z Viedne na grécke ostrovy
 **Kefalonia (EFL), Lefkada (PVK), Zakyntos (ZTH)** za september 2026,
 ukladá históriu do SQLite a generuje `report.html` s grafmi a prepínačom
 destinácií. Bez LLM.
@@ -14,8 +14,8 @@ destinácií. Bez LLM.
 
 Vytvorí/aktualizuje `prices.db` a `report.html`. Report otvor v prehliadači.
 
-## Hodinové spúšťanie — GitHub Actions + Pages (primárne)
-Workflow `.github/workflows/track.yml` beží každú hodinu (cron, UTC):
+## Pravidelné spúšťanie — GitHub Actions + Pages (primárne)
+Workflow `.github/workflows/track.yml` beží každé 2 hodiny (cron, UTC):
 stiahne ceny, commitne `prices.db` späť do repa (rastúca história) a
 publikuje report na **GitHub Pages**. Beží v cloude, nezávisí od zapnutého Macu.
 
