@@ -1,4 +1,4 @@
-from tracker import notify
+from tracker import notify, stats
 
 PRESETS = [
     {"label": "7 nocí", "min_nights": 7, "max_nights": 7},
@@ -184,6 +184,25 @@ def test_window_low_ignores_older_minimum_outside_window():
                 ("2026-08-06T06:00", 150.0))
     assert notify.detect_window_low(s, days=14) is not None
     assert notify.detect_window_low(s, days=60) is None   # v sirsom okne uz nie
+
+
+def test_signals_survive_mixed_naive_and_aware_timestamps():
+    # Regresia: prechod na UTC spravil nove observed_at aware ('...+00:00'), kym
+    # 5 tyzdnov historie je naivnych. Porovnanie hodilo TypeError a notify ticho
+    # umrel (run.py ho chyta) -> alerty nefungovali vobec.
+    s = _series(("2026-08-01T06:00", 200.0),                # stary, naivny
+                ("2026-08-06T06:00", 180.0),
+                ("2026-08-07T05:27+00:00", 150.0))          # novy, aware
+    assert notify.detect_window_low(s, days=14) is not None
+    assert notify.detect_spike(s, hours=24, pct=0.08) is None
+    assert stats.window_series(s, 14)                        # nepadne
+
+
+def test_parse_ts_normalizes_both_shapes():
+    naive = stats.parse_ts("2026-08-07T05:27")
+    aware = stats.parse_ts("2026-08-07T05:27+00:00")
+    assert naive == aware and aware.tzinfo is None
+    assert stats.parse_ts("t1") is None                      # fiktivny ts -> None
 
 
 def test_window_low_needs_strictly_lower():

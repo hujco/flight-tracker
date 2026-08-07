@@ -1,16 +1,29 @@
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 
 def _nights_between(out_date, ret_date):
     return (date.fromisoformat(ret_date) - date.fromisoformat(out_date)).days
 
 
-def _parse_ts(value):
+def parse_ts(value):
+    """observed_at -> naivný UTC datetime, alebo None.
+
+    V DB sú OBA tvary: riadky spred prechodu na UTC sú naivné ('2026-08-07T02:27'),
+    novšie majú offset ('2026-08-07T05:27+00:00'). Priame porovnanie tých dvoch
+    hodí TypeError, tak všetko normalizujeme na naivné UTC. Staré riadky boli
+    reálne písané v UTC (GitHub Actions), takže sa nič neposúva.
+    """
     try:
-        return datetime.fromisoformat(value)
+        ts = datetime.fromisoformat(value)
     except (TypeError, ValueError):
         return None
+    if ts.tzinfo is not None:
+        ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
+    return ts
+
+
+_parse_ts = parse_ts   # spätná kompatibilita pre interné volania
 
 
 def window_series(series, days, key="observed_at"):

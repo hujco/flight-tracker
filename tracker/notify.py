@@ -243,10 +243,9 @@ def _on_cooldown(conn, kind, now_iso):
     last = db.last_alert(conn, kind)
     if not last:
         return False
-    try:
-        prev = datetime.fromisoformat(last["sent_at"])
-        now = datetime.fromisoformat(now_iso)
-    except (TypeError, ValueError):
+    prev = stats.parse_ts(last["sent_at"])      # normalizuje naivné aj aware tvary
+    now = stats.parse_ts(now_iso)
+    if prev is None or now is None:
         return False
     return (now - prev) < timedelta(hours=hours)
 
