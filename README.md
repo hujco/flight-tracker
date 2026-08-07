@@ -33,12 +33,28 @@ Odpojenie:
 
 > Nepoužívaj lokálny aj cloudový beh naraz nad tým istým repom — divergovala by `prices.db`.
 
-## Telegram alert pri dobrej cene
-`tracker/notify.py` po každom behu pošle Telegram správu, keď najlacnejšia
-letenka/os (naprieč `STAY_PRESETS`) klesne na **nové minimum** a zároveň je
-**≤ `ALERT_TARGET_EUR`** (default 130 €). Bez nového minima alebo nad cieľom
-nepošle nič (žiadny spam). Cena ≤ `REFERENCE_PER_PERSON_EUR` sa v správe
-označí ako „🔥 skvelá".
+## Telegram alerty
+`tracker/notify.py` sleduje výhradne náš fixný let (`PRIMARY_TRIP`) a po každom
+behu vyhodnotí **tri nezávislé signály**:
+
+| Signál | Kedy | Správa |
+|--------|------|--------|
+| `target` | cena ≤ `ALERT_TARGET_EUR` (140 €/os) | ✅ / 🔥 kupuj |
+| `window_low` | najnižšie za posledných N dní, **aj nad cieľom** | 📉 príležitosť |
+| `spike` | rast ≥ `ALERT_SPIKE_PCT` (8 %) za 24 h | 📈 okno sa zatvára |
+
+Pošle sa **prvý signál, ktorý prejde cooldownom** (`ALERT_COOLDOWN_HOURS`), takže
+jedno meranie nikdy nepošle dve správy. Keď je signál v cooldowne, padá sa na
+ďalší v poradí — nový nižší prepad sa teda neutopí.
+
+Okno pre `window_low` sa **skracuje na `ALERT_WINDOW_DAYS_NEAR` (10 dní)**, keď je
+do odletu menej než `NEAR_DEPARTURE_DAYS` (30) — vtedy sa už čakať nedá.
+
+> Pôvodne bola jediná podmienka „nové **absolútne** minimum A ZÁROVEŇ ≤ cieľ". Tá sa
+> po zásahu historického minima (126,57 € dňa 13. 7.) natrvalo zamkla a alert prestal
+> chodiť — aj výborná cena 135 € by už neposlala nič. Preto sú signály rozbité.
+
+Odoslané alerty sa zapisujú do tabuľky `alerts` v `prices.db` (odtiaľ cooldown).
 
 Nastavenie (jednorazovo):
 1. V Telegrame napíš **@BotFather** → `/newbot` → získaš **bot token**.

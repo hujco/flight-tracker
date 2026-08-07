@@ -24,8 +24,10 @@ _COLORWAY = ["#3B82F6", "#F59E0B", "#60A5FA", "#FBBF24", "#93C5FD",
 _AMBER = "#F59E0B"
 
 # Počítadlo osôb v porovnávacej hlavičke (prepočíta spolu cenu za skupinu).
-_PERSONS_OPTIONS = [1, 2, 4]
-_DEFAULT_PERSONS = 4
+_PERSONS_OPTIONS = sorted({1, 2, 4, config.PERSONS})
+# musí sedieť s config.PERSONS — inak najviditeľnejšie číslo na stránke („Spolu N os.")
+# ukazuje iný počet ľudí než KPI karty nižšie, ktoré rátajú s config.PERSONS
+_DEFAULT_PERSONS = config.PERSONS
 
 
 def _style(fig, title=None):

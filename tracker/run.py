@@ -1,25 +1,34 @@
 import logging
 import os
-from datetime import datetime
+import sys
+from datetime import datetime, timezone
 
 from . import collect, config, db, notify, report
 
 
 def main():
     logging.basicConfig(
-        filename=str(config.LOG_PATH),
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[
+            logging.FileHandler(str(config.LOG_PATH)),
+            # bez stdout je zlyhanie v GitHub Actions neviditeľné: log súbor je
+            # v .gitignore a s runnerom zanikne
+            logging.StreamHandler(sys.stdout),
+        ],
     )
-    observed_at = datetime.now().isoformat(timespec="minutes")
+    # UTC explicitne: to isté beží aj lokálne (launchd), kde by naivný čas bol CEST
+    observed_at = datetime.now(timezone.utc).isoformat(timespec="minutes")
     conn = db.connect(config.DB_PATH)
     db.init_db(conn)
 
+    collect_failed = None
     try:
         n = collect.collect_once(conn, observed_at)
         logging.info("collected %d rows at %s", n, observed_at)
     except Exception as exc:  # zlyhanie zberu -> nic sa nezapise (atomicita),
-        logging.error("collect failed at %s: %s", observed_at, exc)  # report sa aj tak pregeneruje z existujucich dat
+        collect_failed = exc                                          # report sa aj tak pregeneruje z existujucich dat
+        logging.error("collect failed at %s: %s", observed_at, exc)
 
     # report vzdy pregeneruj z aktualnych dat v DB (aj ked tento zber zlyhal)
     rows = db.all_rows(conn)
@@ -34,10 +43,15 @@ def main():
             logging.error("notify test failed: %s", exc)
 
     try:
-        sent, msg = notify.maybe_notify(rows)
+        sent, msg = notify.maybe_notify(rows, conn=conn)
         logging.info("notify: %s", msg)
     except Exception as exc:  # alert nesmie zhodiť beh
         logging.error("notify failed: %s", exc)
+
+    # Report a alert prebehli aj tak, ale beh musí skončiť červeno — inak je
+    # „zelený beh, ktorý nezapísal nič" na nerozoznanie od úspechu.
+    if collect_failed is not None:
+        raise SystemExit(f"zber zlyhal: {collect_failed}")
 
 
 if __name__ == "__main__":

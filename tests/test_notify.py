@@ -149,7 +149,8 @@ def test_maybe_notify_ignores_other_origin(monkeypatch):
 
 
 def test_maybe_notify_none_above_target(monkeypatch):
-    # Nas let je nad cielom (140) -> ziadny alert (toto bola stara chyba: 130 < 155)
+    # Jedine meranie nad cielom (140) -> ziadny signal (na window_low/spike
+    # treba aspon dve merania, na target cenu <= 140)
     rows = [
         _row("t1", "PVK", "OUT", "2026-09-06", 80.0, origin="BUD"), _row("t1", "PVK", "RET", "2026-09-13", 75.0, origin="BUD"),  # 155 > 140
     ]
@@ -157,3 +158,111 @@ def test_maybe_notify_none_above_target(monkeypatch):
     monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
     ok, msg = notify.maybe_notify(rows, session=s)
     assert ok is False and len(s.sent) == 0
+
+
+# --- nezavisle signaly (target / window_low / spike) ---------------------------
+
+def _series(*pairs):
+    """[(observed_at, total), ...] -> tvar, aky vracia stats.primary_trip_over_time."""
+    return [{"observed_at": ts, "total": total} for ts, total in pairs]
+
+
+def test_window_low_fires_above_target_when_locally_cheapest():
+    # Jadro opravy: 150 je nad cielom (140), ale je to najnizsie za okno -> alert.
+    # Stara logika (absolutne minimum A ZAROVEN <= ciel) by nesposlala nic.
+    s = _series(("2026-08-01T06:00", 200.0), ("2026-08-05T06:00", 180.0),
+                ("2026-08-06T06:00", 150.0))
+    info = notify.detect_window_low(s, days=14)
+    assert info is not None
+    assert info["price"] == 150.0 and info["prev_low"] == 180.0
+
+
+def test_window_low_ignores_older_minimum_outside_window():
+    # 126 spred 30 dni uz do 14-dnoveho okna nespada -> 150 je stale lokalne minimum.
+    # Presne toto zamklo povodny alert natrvalo.
+    s = _series(("2026-07-05T06:00", 126.0), ("2026-08-05T06:00", 180.0),
+                ("2026-08-06T06:00", 150.0))
+    assert notify.detect_window_low(s, days=14) is not None
+    assert notify.detect_window_low(s, days=60) is None   # v sirsom okne uz nie
+
+
+def test_window_low_needs_strictly_lower():
+    s = _series(("2026-08-05T06:00", 150.0), ("2026-08-06T06:00", 150.0))
+    assert notify.detect_window_low(s, days=14) is None
+
+
+def test_spike_fires_on_jump():
+    s = _series(("2026-08-06T00:00", 126.0), ("2026-08-06T12:00", 198.0))
+    info = notify.detect_spike(s, hours=24, pct=0.08)
+    assert info is not None
+    assert info["prev_low"] == 126.0 and info["change_pct"] == 57.1
+
+
+def test_spike_ignores_small_move_and_drop():
+    flat = _series(("2026-08-06T00:00", 150.0), ("2026-08-06T12:00", 154.0))  # +2.7 %
+    assert notify.detect_spike(flat, hours=24, pct=0.08) is None
+    down = _series(("2026-08-06T00:00", 200.0), ("2026-08-06T12:00", 150.0))
+    assert notify.detect_spike(down, hours=24, pct=0.08) is None
+
+
+def test_spike_only_looks_inside_window():
+    # lacne meranie je 5 dni stare -> do 24h okna nespada, ziadny spike
+    s = _series(("2026-08-01T06:00", 126.0), ("2026-08-06T06:00", 198.0))
+    assert notify.detect_spike(s, hours=24, pct=0.08) is None
+
+
+def test_target_fires_regardless_of_all_time_low():
+    # 135 nie je absolutne minimum (126), ale je pod cielom -> stale sa kupuje
+    s = _series(("2026-07-13T14:00", 126.0), ("2026-08-06T06:00", 135.0))
+    info = notify.detect_target(s, target=140)
+    assert info is not None and info["all_time_low"] is False
+
+
+def test_signals_priority_target_before_window_low():
+    rows = [
+        _row("2026-08-01T06:00", "PVK", "OUT", "2026-09-06", 100.0, origin="BUD"),
+        _row("2026-08-01T06:00", "PVK", "RET", "2026-09-13", 100.0, origin="BUD"),  # 200
+        _row("2026-08-06T06:00", "PVK", "OUT", "2026-09-06", 60.0, origin="BUD"),
+        _row("2026-08-06T06:00", "PVK", "RET", "2026-09-13", 65.0, origin="BUD"),   # 125
+    ]
+    kinds = [s["kind"] for s in notify.detect_signals(rows, notify.config.PRIMARY_TRIP)]
+    assert kinds[0] == "target" and "window_low" in kinds
+
+
+def test_maybe_notify_cooldown_blocks_repeat_of_same_kind(monkeypatch):
+    import sqlite3
+    from tracker import db
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    db.init_db(conn)
+    rows = [
+        _row("2026-08-01T06:00", "PVK", "OUT", "2026-09-06", 100.0, origin="BUD"),
+        _row("2026-08-01T06:00", "PVK", "RET", "2026-09-13", 100.0, origin="BUD"),
+        _row("2026-08-06T06:00", "PVK", "OUT", "2026-09-06", 60.0, origin="BUD"),
+        _row("2026-08-06T06:00", "PVK", "RET", "2026-09-13", 65.0, origin="BUD"),   # 125
+    ]
+    monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
+    s = _CaptureSession()
+    ok, _ = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-06T06:05")
+    assert ok is True and len(s.sent) == 1
+
+    # o hodinu neskor: target je v cooldowne -> padne sa na window_low, nie ticho
+    ok2, msg2 = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-06T07:05")
+    assert ok2 is True and "window_low" in msg2
+
+    # oba uz odoslane -> tretie volanie mlci
+    ok3, msg3 = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-06T08:05")
+    assert ok3 is False and "cooldowne" in msg3
+    assert len(s.sent) == 2
+
+
+def test_format_message_spike_says_buy_now():
+    info = {"kind": "spike", "price": 198.0, "prev_low": 126.0, "change_pct": 57.1,
+            "window_hours": 24, "days_left": 31, "observed_at": "t",
+            "combo": {"out_date": "2026-09-06", "ret_date": "2026-09-13",
+                      "nights": 7, "label": "7 nocí"}}
+    msg = notify.format_message(info, "Lefkada", "BUD", 117.0, 140.0, "http://x")
+    assert "Cena stúpa" in msg and "+57.1 %" in msg
+    assert "posledná šanca" in msg
+    assert "Do odletu 31 dní" in msg
+    assert "len pár sedadiel" not in msg      # pri raste je hint o sedadlach nezmysel

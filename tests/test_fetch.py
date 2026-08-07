@@ -14,8 +14,44 @@ def test_parse_fares_tags_destination_and_origin():
     assert recs == [{
         "origin": "BUD", "destination": "EFL", "direction": "OUT",
         "flight_date": "2026-09-26", "flight_number": "FR7310",
-        "price": 34.99, "seats_left": None,
+        "departure_time": "2026-09-26T11:55:00", "arrival_time": None,
+        "price": 34.99, "currency": None,
+        "price_updated": None, "previous_price": None, "seats_left": None,
     }]
+
+
+def test_parse_fares_keeps_price_updated_and_times():
+    payload = {"fares": [{"outbound": {
+        "departureDate": "2026-09-06T05:50:00",
+        "arrivalDate": "2026-09-06T08:40:00",
+        "price": {"value": 49.99, "currencyCode": "EUR"},
+        "priceUpdated": 1786076796000,
+        "flightNumber": "FR7770"}}]}
+    r = fetch.parse_fares(payload, "OUT", "PVK", "BUD")[0]
+    assert r["departure_time"] == "2026-09-06T05:50:00"   # 05:50 je materialna info
+    assert r["arrival_time"] == "2026-09-06T08:40:00"
+    assert r["currency"] == "EUR"
+    assert r["price_updated"].startswith("2026-")          # epoch ms -> ISO UTC
+
+
+def test_parse_fares_skips_broken_fare_instead_of_crashing():
+    # chybny zaznam nesmie zhodit cely beh (62 requestov, atomicky zapis)
+    payload = {"fares": [
+        {"outbound": {"departureDate": "2026-09-06T05:50:00",
+                      "price": None, "flightNumber": "FR1"}},
+        {"nieco_ine": {}},
+        {"outbound": {"departureDate": "2026-09-06T05:50:00",
+                      "price": {"value": 49.99}, "flightNumber": "FR2"}},
+    ]}
+    recs = fetch.parse_fares(payload, "OUT", "PVK", "BUD")
+    assert [r["flight_number"] for r in recs] == ["FR2"]
+
+
+def test_parse_fares_tolerates_bad_price_updated():
+    payload = {"fares": [{"outbound": {
+        "departureDate": "2026-09-06T05:50:00", "price": {"value": 10.0},
+        "priceUpdated": "nezmysel", "flightNumber": "FR1"}}]}
+    assert fetch.parse_fares(payload, "OUT", "PVK", "BUD")[0]["price_updated"] is None
 
 
 def test_parse_fares_origin_defaults_none():

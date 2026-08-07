@@ -42,6 +42,7 @@ def collect_once(conn, observed_at, destinations=None, origin=None,
     bud_origin = bud_origin if bud_origin is not None else config.BUD_ORIGIN
     bud_destinations = bud_destinations if bud_destinations is not None else config.BUD_DESTINATIONS
     bud_trips = bud_trips if bud_trips is not None else config.BUD_TRIPS
+    session = session if session is not None else fetch.make_session()
 
     records = _month_records(origin, destinations, year, month, currency, session)
     if bud_trips:  # druhé odletisko: striktné fixné itineráre

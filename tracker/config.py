@@ -25,9 +25,30 @@ EXTRAS_EUR = BAGGAGE_PER_LEG_EUR * 2 + SEATS_EUR   # = 67.78 (kufor tam+späť +
 # Defaultne počítame LEN letenky (bez batožiny/miesteniek). Na True zapne extras do odhadu.
 INCLUDE_EXTRAS = False
 
-# Telegram alert: pošli keď najlacnejšia letenka/os (naprieč STAY_PRESETS) klesne na
-# nové minimum A zároveň je ≤ ALERT_TARGET_EUR. Creds idú cez env (GitHub Secrets).
+# Telegram alerty. Creds idú cez env (GitHub Secrets).
+#
+# Pôvodne bola jediná podmienka „nové ABSOLÚTNE minimum A ZÁROVEŇ ≤ cieľ". Tá sa po
+# zásahu historického minima (126.57 € dňa 13.7.) natrvalo zamkla — aj výborná cena
+# 135 € by už neposlala nič. Preto sú signály rozbité na nezávislé:
+#   target      — cena ≤ ALERT_TARGET_EUR (urgentné, kupuj)
+#   window_low  — najnižšie za posledných N dní (aj keď nad cieľom)
+#   spike       — cena vyskočila hore, okno sa zatvára
 ALERT_TARGET_EUR = 140.0
+
+# „Najnižšie za posledných N dní". Mesiac pred odletom skracujeme okno — vtedy je
+# každý lokálny prepad reálna príležitosť, lebo času na čakanie už niet.
+ALERT_WINDOW_DAYS = 14
+ALERT_WINDOW_DAYS_NEAR = 10
+NEAR_DEPARTURE_DAYS = 30          # od kedy platí skrátené okno
+
+# Spike: rast o ≥ X oproti minimu za posledných N hodín → „ak si videl lacnejšie, ber".
+ALERT_SPIKE_PCT = 0.08
+ALERT_SPIKE_HOURS = 24
+
+# Aby alerty nespamovali: rovnaký druh signálu najskôr po N hodinách. Keď je signál
+# v cooldowne, padá sa na ďalší v poradí — takže nový nižší prepad počas „target"
+# cooldownu prejde cez window_low a neutopí sa.
+ALERT_COOLDOWN_HOURS = {"target": 12, "window_low": 12, "spike": 48}
 REPORT_URL = "https://hujco.github.io/flight-tracker/"
 # chat id nie je tajné (bez tokenu sa s ním nedá nič) → môže byť tu; token ostáva v Secrets
 TELEGRAM_CHAT_ID = "8804095194"

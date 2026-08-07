@@ -1,9 +1,56 @@
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, timedelta
 
 
 def _nights_between(out_date, ret_date):
     return (date.fromisoformat(ret_date) - date.fromisoformat(out_date)).days
+
+
+def _parse_ts(value):
+    try:
+        return datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def window_series(series, days, key="observed_at"):
+    """Chvost série za posledných `days` dní, meraných od POSLEDNÉHO merania.
+
+    Zámerne nie od „teraz" — keď zber vypadne, okno sa má počítať voči dátam,
+    ktoré reálne máme, nie voči nástennému času.
+
+    Keď sa timestampy nedajú parsovať, vráti celú sériu: okno sa nedá vymedziť,
+    tak radšej porovnávame voči všetkému (prísnejšie) než by sme mali spadnúť.
+    """
+    if not series:
+        return []
+    end = _parse_ts(series[-1][key])
+    if end is None:
+        return list(series)
+    start = end - timedelta(days=days)
+    out = []
+    for s in series:
+        ts = _parse_ts(s[key])
+        if ts is None or ts >= start:
+            out.append(s)
+    return out
+
+
+def days_until(iso_date, today=None):
+    """Dní do daného dátumu (záporné = už bolo)."""
+    today = today or date.today()
+    return (date.fromisoformat(iso_date) - today).days
+
+
+def percentile_of(values, value):
+    """Podiel hodnôt STRIKTNE nižších než `value`, v percentách.
+
+    0 % = najlacnejšie, čo sme kedy videli; 100 % = najdrahšie.
+    """
+    if not values:
+        return None
+    lower = sum(1 for v in values if v < value)
+    return round(100.0 * lower / len(values), 1)
 
 
 def total_with_extras(base_total, persons, extras):

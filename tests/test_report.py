@@ -1,4 +1,4 @@
-from tracker import report
+from tracker import config, report
 
 # Sledujeme len Lefkadu (PVK). VIE = sken mesiaca, tu jedna 7-nocová kombinácia.
 ROWS = [
@@ -32,10 +32,10 @@ def test_report_compares_origins():
     # verdikt: BUD (45) lacnejsi o 65 oproti VIE (110)
     assert "Budapešť" in html and "lacnejšia" in html and "65" in html
     assert "najlacnejšie" in html             # odznak vitaza
-    # pocitadlo osob: default 4 -> VIE 110*4=440, BUD 45*4=180
+    # pocitadlo osob: default = config.PERSONS (2) -> VIE 110*2=220, BUD 45*2=90
     assert "Počet osôb" in html and "pp-btn" in html
-    assert "Spolu 4 os." in html
-    assert "440" in html and "180" in html
+    assert f"Spolu {config.PERSONS} os." in html
+    assert "220" in html and "90" in html
     # detaily nizsie: obe odletiska, vlastne labely + ceny
     assert "BUD→PVK" in html and "VIE→PVK" in html
     assert "45" in html and "110" in html
@@ -51,10 +51,17 @@ def test_report_primary_trip_hero():
     assert "hero" in html and "Náš let" in html
     assert "06.09.2026" in html and "13.09.2026" in html   # fixny termin 6->13
     assert "Počet osôb" in html                            # pocitadlo v hero
-    # cena/os = 45, default 4 osoby -> 180; jednotlive nohy 20 a 25
-    assert "45 €" in html and "Spolu 4 os." in html and "180" in html
+    # cena/os = 45, default = config.PERSONS (2) -> 90; jednotlive nohy 20 a 25
+    assert "45 €" in html and f"Spolu {config.PERSONS} os." in html and "90" in html
     # hero je pred porovnavacou sekciou v tele stranky
     assert html.index("class='hero'") < html.index("class='cmp-section'")
+
+
+def test_report_default_persons_matches_config():
+    # najviditelnejsie cislo na stranke ("Spolu N os.") musi ratat s tym istym
+    # poctom ludi ako KPI karty nizsie, ktore beru config.PERSONS
+    assert report._DEFAULT_PERSONS == config.PERSONS
+    assert config.PERSONS in report._PERSONS_OPTIONS
 
 
 # BUD: nas termin (6->13, spolu 45) + druhy, LACNEJSI termin (1->8, spolu 30).
