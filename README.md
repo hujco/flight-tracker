@@ -1,9 +1,13 @@
-# Ryanair Price Tracker (VIE ↔ EFL)
+# Ryanair Price Tracker (BUD ↔ PVK)
 
-Sleduje každé 2 hodiny ceny letov Ryanair z Viedne na grécke ostrovy
-**Kefalonia (EFL), Lefkada (PVK), Zakyntos (ZTH)** za september 2026,
-ukladá históriu do SQLite a generuje `report.html` s grafmi a prepínačom
-destinácií. Bez LLM.
+Sleduje každé 2 hodiny cenu **jedného fixného letu** Ryanair
+**Budapešť (BUD) ↔ Lefkada (PVK), 6.–13. 9. 2026**, ukladá históriu do SQLite
+a generuje `report.html`. Bez LLM.
+
+> Viedeň je vypnutá (`DESTINATIONS = []`). Ubytovanie je zaplatené na fixný
+> termín 6. 9. a VIE↔PVK lieta stredy a soboty — na náš termín teda spoj
+> neexistuje. Sken celého mesiaca preto nemá zmysel: beh je dnes 4 requesty
+> namiesto 62. Historické VIE dáta v `prices.db` ostávajú, report ich neukazuje.
 
 ## Inštalácia
     python3 -m venv .venv
@@ -13,6 +17,11 @@ destinácií. Bez LLM.
     .venv/bin/python -m tracker.run
 
 Vytvorí/aktualizuje `prices.db` a `report.html`. Report otvor v prehliadači.
+
+Report je jedna karta o našom lete: cena/os, prepínač počtu osôb, verdikt
+(percentil voči histórii), rozsah za 7 dní, zmena za 24 h, dní do odletu a graf
+vývoja. Layout je responzívny — overené pri 320 / 390 / 768 px bez vodorovného
+scrollu.
 
 ## Pravidelné spúšťanie — GitHub Actions + Pages (primárne)
 Workflow `.github/workflows/track.yml` beží každé 2 hodiny (cron, UTC):

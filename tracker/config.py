@@ -83,10 +83,17 @@ REFERENCE_PRICE_EUR = 301.0
 REFERENCE_PER_PERSON_EUR = round((REFERENCE_PRICE_EUR - EXTRAS_EUR) / PERSONS, 2)
 
 # OUT = tam (origin->destinacia), RET = spat (destinacia->origin)
+#
+# ORIGIN ostáva "VIE" LEN ako default pre staré riadky v DB, ktoré vznikli pred
+# multi-origin a nemajú vyplnený stĺpec `origin`. Aktívne sa z Viedne už nezbiera.
 ORIGIN = "VIE"
-DESTINATIONS = [
-    {"code": "PVK", "label": "Lefkada"},    # letisko Preveza/Aktion
-]
+
+# Viedeň je vypnutá: ubytovanie na Lefkade je zaplatené na fixný termín 6.9.,
+# a VIE↔PVK lieta stredy a soboty — na náš termín (nedeľa) teda neexistuje spoj.
+# Porovnávať flexibilnú Viedeň s fixným Budapešťou bolo zavádzajúce.
+# Prázdny zoznam = žiadny sken mesiaca, zostáva len fixný BUD itinerár nižšie
+# (4 requesty na beh namiesto 62). Historické VIE dáta v `prices.db` ostávajú.
+DESTINATIONS = []
 
 # Druhé odletisko: Budapešť (BUD). Na rozdiel od VIE (sken celého mesiaca naprieč
 # dĺžkami pobytu) tu sledujeme LEN striktné fixné itineráre s pevnou dĺžkou pobytu.

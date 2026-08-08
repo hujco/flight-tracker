@@ -1,71 +1,13 @@
 from tracker import config, report
 
-# Sledujeme len Lefkadu (PVK). VIE = sken mesiaca, tu jedna 7-nocová kombinácia.
-ROWS = [
+# Staré VIE dáta v DB ostávajú (historia), ale report ich už nesmie zobrazovať:
+# ubytovanie je fixne na 6.9. a VIE↔PVK v ten den nelieta.
+VIE_ROWS = [
     {"observed_at": "2026-06-30T14:00", "origin": "VIE", "destination": "PVK", "direction": "OUT", "flight_date": "2026-09-26", "flight_number": "FR1", "price": 40.0},
-    {"observed_at": "2026-06-30T14:00", "origin": "VIE", "destination": "PVK", "direction": "RET", "flight_date": "2026-10-03", "flight_number": "FR2", "price": 70.0},  # 7 noci -> 110
+    {"observed_at": "2026-06-30T14:00", "origin": "VIE", "destination": "PVK", "direction": "RET", "flight_date": "2026-10-03", "flight_number": "FR2", "price": 70.0},  # 110
 ]
 
-
-def test_report_lefkada_no_destination_toggle():
-    html = report.build_report_html(ROWS)
-    assert "<html" in html.lower()
-    assert "Lefkada" in html
-    # jedina destinacia -> ziadny prepinac destinacii (button sa nerenderuje)
-    assert "class='dest-btn'" not in html
-    assert "Destinácia:" not in html
-    assert "Kefalonia" not in html and "Zakyntos" not in html
-    assert "110" in html                      # VIE 40+70 round-trip (7 noci)
-    assert "VIE→PVK" in html                  # panel pouziva vlastny label
-
-
-def test_report_compares_origins():
-    # Lefkada ma VIE (110) aj BUD (45) -> porovnavacia hlavicka s verdiktom + spolocny graf
-    rows = ROWS + [
-        {"observed_at": "2026-06-30T14:00", "origin": "BUD", "destination": "PVK", "direction": "OUT", "flight_date": "2026-09-06", "flight_number": "W6A", "price": 20.0},
-        {"observed_at": "2026-06-30T14:00", "origin": "BUD", "destination": "PVK", "direction": "RET", "flight_date": "2026-09-13", "flight_number": "W6B", "price": 25.0},  # 7 noci -> 45
-    ]
-    html = report.build_report_html(rows)
-    # porovnavacie karty
-    assert "cmp-grid" in html and "cmp-card" in html
-    assert "(VIE)" in html and "(BUD)" in html
-    # verdikt: BUD (45) lacnejsi o 65 oproti VIE (110)
-    assert "Budapešť" in html and "lacnejšia" in html and "65" in html
-    assert "najlacnejšie" in html             # odznak vitaza
-    # pocitadlo osob: default = config.PERSONS (2) -> VIE 110*2=220, BUD 45*2=90
-    assert "Počet osôb" in html and "pp-btn" in html
-    assert f"Spolu {config.PERSONS} os." in html
-    assert "220" in html and "90" in html
-    # detaily nizsie: obe odletiska, vlastne labely + ceny
-    assert "BUD→PVK" in html and "VIE→PVK" in html
-    assert "45" in html and "110" in html
-
-
-def test_report_primary_trip_hero():
-    # Nas hlavny let (BUD 6->13.9) sa zvyrazni navrchu s cenou a pocitadlom
-    rows = ROWS + [
-        {"observed_at": "2026-06-30T14:00", "origin": "BUD", "destination": "PVK", "direction": "OUT", "flight_date": "2026-09-06", "flight_number": "W6A", "price": 20.0},
-        {"observed_at": "2026-06-30T14:00", "origin": "BUD", "destination": "PVK", "direction": "RET", "flight_date": "2026-09-13", "flight_number": "W6B", "price": 25.0},
-    ]
-    html = report.build_report_html(rows)
-    assert "hero" in html and "Náš let" in html
-    assert "06.09.2026" in html and "13.09.2026" in html   # fixny termin 6->13
-    assert "Počet osôb" in html                            # pocitadlo v hero
-    # cena/os = 45, default = config.PERSONS (2) -> 90; jednotlive nohy 20 a 25
-    assert "45 €" in html and f"Spolu {config.PERSONS} os." in html and "90" in html
-    # hero je pred porovnavacou sekciou v tele stranky
-    assert html.index("class='hero'") < html.index("class='cmp-section'")
-
-
-def test_report_default_persons_matches_config():
-    # najviditelnejsie cislo na stranke ("Spolu N os.") musi ratat s tym istym
-    # poctom ludi ako KPI karty nizsie, ktore beru config.PERSONS
-    assert report._DEFAULT_PERSONS == config.PERSONS
-    assert config.PERSONS in report._PERSONS_OPTIONS
-
-
 # BUD: nas termin (6->13, spolu 45) + druhy, LACNEJSI termin (1->8, spolu 30).
-# Lacnejsi termin nesmie vyzerat ako cena nasho letu.
 _BUD_PRIMARY = [
     {"observed_at": "2026-06-30T14:00", "origin": "BUD", "destination": "PVK", "direction": "OUT", "flight_date": "2026-09-06", "flight_number": "W6A", "price": 20.0},
     {"observed_at": "2026-06-30T14:00", "origin": "BUD", "destination": "PVK", "direction": "RET", "flight_date": "2026-09-13", "flight_number": "W6B", "price": 25.0},
@@ -76,86 +18,126 @@ _BUD_ALT = [
 ]
 
 
+def test_report_shows_only_our_flight():
+    html = report.build_report_html(VIE_ROWS + _BUD_PRIMARY)
+    assert "hero" in html and "Náš let" in html
+    assert "06.09.2026" in html and "13.09.2026" in html
+    assert "45 €" in html and f"Spolu {config.PERSONS} os." in html and "90" in html
+
+
+def test_report_drops_vienna_entirely():
+    # Viedeň nelieta náš termín -> nesmie sa objaviť ani ako porovnanie,
+    # ani ako "iné termíny". Predtým dostávala odznak "najlacnejšie".
+    html = report.build_report_html(VIE_ROWS + _BUD_PRIMARY)
+    assert "Viedne" not in html and "(VIE)" not in html and "VIE→PVK" not in html
+    assert "110" not in html                  # VIE round-trip cena
+    assert "cmp-section" not in html and "cmp-grid" not in html
+    assert "Odkiaľ sa oplatí letieť" not in html
+
+
+def test_report_drops_other_dates_section():
+    html = report.build_report_html(VIE_ROWS + _BUD_PRIMARY + _BUD_ALT)
+    assert "Iné termíny" not in html and "class='secondary'" not in html
+    assert "Najlacnejší round-trip" not in html
+    assert "Dĺžka pobytu" not in html
+
+
 def test_hero_price_is_our_date_not_the_cheapest_one():
     # Hero musi ukazat 45 € (6->13), NIE 30 € (1->8), aj ked 1->8 je lacnejsi.
-    html = report.build_report_html(ROWS + _BUD_PRIMARY + _BUD_ALT)
-    hero = html[html.index("class='hero'"):html.index("class='secondary'")]
-    assert "45 €" in hero and "30 €" not in hero
-    assert "06.09.2026" in hero and "13.09.2026" in hero
-    assert "01.09.2026" not in hero and "08.09.2026" not in hero
+    html = report.build_report_html(VIE_ROWS + _BUD_PRIMARY + _BUD_ALT)
+    assert "45 €" in html and "30 €" not in html
+    assert "01.09.2026" not in html and "08.09.2026" not in html
 
 
-def test_other_dates_are_separated_below_hero():
-    html = report.build_report_html(ROWS + _BUD_PRIMARY + _BUD_ALT)
-    # poradie v tele: hero -> oddelovac 'iné termíny' -> porovnanie odletisk
-    assert (html.index("class='hero'")
-            < html.index("class='secondary'")
-            < html.index("class='cmp-section'"))
-    assert "Iné termíny" in html
-    # karty/riadky s inym datumom su oznacene, nas termin tiez
-    assert "iný termín" in html and "náš termín" in html
+def test_report_only_vie_data_says_no_data_for_our_trip():
+    html = report.build_report_html(VIE_ROWS)
+    assert "Pre náš termín zatiaľ žiadne dáta" in html
 
+
+def test_report_default_persons_matches_config():
+    assert report._DEFAULT_PERSONS == config.PERSONS
+    assert config.PERSONS in report._PERSONS_OPTIONS
+
+
+# --- verdikt: cisla na rozhodnutie -------------------------------------------
+
+def _at(ts, out_p, ret_p):
+    return [dict(_BUD_PRIMARY[0], observed_at=ts, price=out_p),
+            dict(_BUD_PRIMARY[1], observed_at=ts, price=ret_p)]
+
+
+def test_verdict_shows_percentile_and_countdown():
+    rows = _at("2026-08-01T06:00", 20.0, 25.0) + _at("2026-08-07T06:00", 40.0, 45.0)
+    html = report.build_report_html(rows)
+    assert "percentil" in html                 # kde sme voci historii
+    assert "Za 7 dní" in html and "Do odletu" in html
+
+
+def test_verdict_flags_expensive_when_at_top_of_history():
+    # 3 zo 4 merani lacnejsie -> 75. percentil -> "drahe"
+    rows = (_at("2026-08-01T06:00", 20.0, 25.0) + _at("2026-08-03T06:00", 22.0, 25.0)
+            + _at("2026-08-05T06:00", 24.0, 25.0) + _at("2026-08-07T06:00", 60.0, 65.0))
+    html = report.build_report_html(rows)
+    assert "Drahé oproti histórii" in html and "verdict-bad" in html
+
+
+def test_verdict_flags_cheap_when_at_bottom_of_history():
+    rows = (_at("2026-08-01T06:00", 60.0, 65.0) + _at("2026-08-03T06:00", 58.0, 65.0)
+            + _at("2026-08-05T06:00", 56.0, 65.0) + _at("2026-08-07T06:00", 20.0, 25.0))
+    html = report.build_report_html(rows)
+    assert "Lacné oproti histórii" in html and "verdict-good" in html
+
+
+def test_verdict_absent_with_single_measurement():
+    # jedno meranie -> percentil ani trend nedavaju zmysel
+    html = report.build_report_html(_BUD_PRIMARY)
+    assert "percentil" not in html
+
+
+# --- spravanie hera pri minime (nezmenene) ------------------------------------
 
 def test_hero_shows_lowest_so_far():
     older = [dict(r, observed_at="2026-06-29T14:00", price=r["price"] + 5) for r in _BUD_PRIMARY]
-    html = report.build_report_html(ROWS + older + _BUD_PRIMARY)
-    hero = html[html.index("class='hero'"):html.index("class='secondary'")]
-    # teraz 45, predtym 55 -> teraz je nove minimum
-    assert "45 €" in hero and "najnižšie" in hero.lower()
+    html = report.build_report_html(older + _BUD_PRIMARY)
+    assert "45 €" in html and "najnižšie" in html.lower()
 
 
 def test_hero_shows_lowest_above_current():
-    # najnizsie bolo 45, teraz 55 -> ziadny zeleny signal, ukaz rozdiel
     older = [dict(r, observed_at="2026-06-29T14:00") for r in _BUD_PRIMARY]
     now = [dict(r, price=r["price"] + 5) for r in _BUD_PRIMARY]
-    html = report.build_report_html(ROWS + older + now)
-    hero = html[html.index("class='hero'"):html.index("class='secondary'")]
-    assert "Najnižšie doteraz" in hero and "45 €/os" in hero and "+10 €" in hero
-    assert "hero-low-hit" not in hero
+    html = report.build_report_html(older + now)
+    assert "Najnižšie doteraz" in html and "45 €/os" in html and "+10 €" in html
+    assert "class='hero-low hero-low-hit'" not in html   # markup, nie CSS pravidlo
 
 
 def test_hero_flat_price_is_not_a_buy_signal():
-    # cena sa nikdy nepohla -> neklamme zelenym "teraz je najnizsie"
     older = [dict(r, observed_at="2026-06-29T14:00") for r in _BUD_PRIMARY]
-    html = report.build_report_html(ROWS + older + _BUD_PRIMARY)
-    hero = html[html.index("class='hero'"):html.index("class='secondary'")]
-    assert "Cena sa zatiaľ nehla" in hero and "2 meraní" in hero
-    assert "hero-low-hit" not in hero
+    html = report.build_report_html(older + _BUD_PRIMARY)
+    assert "Cena sa zatiaľ nehla" in html and "2 meraní" in html
+    assert "class='hero-low hero-low-hit'" not in html   # markup, nie CSS pravidlo
 
 
 def test_hero_persons_toggle_has_multiperson_caveat():
-    # cena/os × N je optimisticka (lead-in cena) -> pri prepinaci osob musi byt
-    # trvala poznamka, aj ked NIE sme na minime (jedno meranie = ziadny min signal)
-    html = report.build_report_html(ROWS + _BUD_PRIMARY)
-    hero = html[html.index("class='hero'"):html.index("class='secondary'")]
-    assert "Počet osôb" in hero
-    assert "Suma za viac osôb je orientačná" in hero
+    html = report.build_report_html(_BUD_PRIMARY)
+    assert "Počet osôb" in html
+    assert "Suma za viac osôb je orientačná" in html
 
 
 def test_hero_at_min_warns_about_few_seats():
-    # teraz je na historickom minime (najlacnejsi fare bucket) -> varuj o sedadlach
     older = [dict(r, observed_at="2026-06-29T14:00", price=r["price"] + 5) for r in _BUD_PRIMARY]
-    html = report.build_report_html(ROWS + older + _BUD_PRIMARY)
-    hero = html[html.index("class='hero'"):html.index("class='secondary'")]
-    assert "hero-low-hit" in hero
-    assert "len pár sedadiel" in hero
+    html = report.build_report_html(older + _BUD_PRIMARY)
+    assert "class='hero-low hero-low-hit'" in html and "len pár sedadiel" in html
 
 
 def test_hero_above_min_no_seat_warning():
-    # cena je nad minimom -> ziadny "kupuj hned" bucket signal -> ziadne varovanie o sedadlach
     older = [dict(r, observed_at="2026-06-29T14:00") for r in _BUD_PRIMARY]
     now = [dict(r, price=r["price"] + 5) for r in _BUD_PRIMARY]
-    html = report.build_report_html(ROWS + older + now)
-    hero = html[html.index("class='hero'"):html.index("class='secondary'")]
-    assert "len pár sedadiel" not in hero
+    assert "len pár sedadiel" not in report.build_report_html(older + now)
 
 
 def test_hero_flat_price_no_seat_warning():
-    # cena sa nikdy nepohla -> nevieme povedat ze je to najlacnejsi bucket -> ziadne varovanie
     older = [dict(r, observed_at="2026-06-29T14:00") for r in _BUD_PRIMARY]
-    html = report.build_report_html(ROWS + older + _BUD_PRIMARY)
-    hero = html[html.index("class='hero'"):html.index("class='secondary'")]
-    assert "len pár sedadiel" not in hero
+    assert "len pár sedadiel" not in report.build_report_html(older + _BUD_PRIMARY)
 
 
 def test_report_empty():
@@ -164,5 +146,5 @@ def test_report_empty():
 
 def test_write_report_creates_file(tmp_path):
     out = tmp_path / "report.html"
-    report.write_report(ROWS, out)
+    report.write_report(_BUD_PRIMARY, out)
     assert out.exists() and "Lefkada" in out.read_text(encoding="utf-8")
