@@ -33,7 +33,15 @@ INCLUDE_EXTRAS = False
 #   target      — cena ≤ ALERT_TARGET_EUR (urgentné, kupuj)
 #   window_low  — najnižšie za posledných N dní (aj keď nad cieľom)
 #   spike       — cena vyskočila hore, okno sa zatvára
-ALERT_TARGET_EUR = 140.0
+# 140 € bola cena z prvého týždňa sledovania; za posledné 2 týždne pod ňu cena
+# neklesla ani raz (medián 197 €), takže alert mlčal. 180 € je „toto beriem"
+# hranica pre aktuálnu situáciu — ale sama o sebe je tiež riedka (1 zo 112 meraní
+# za 14 dní), preto je pod ňou ešte HEARTBEAT_HOURS súhrn.
+ALERT_TARGET_EUR = 180.0
+
+# Keď X hodín neprišiel žiadny alert, pošli súhrn — aby ticho nikdy neznamenalo
+# „asi je to pokazené". Mesiac pred odletom je denný kontakt primeraný.
+HEARTBEAT_HOURS = 24
 
 # „Najnižšie za posledných N dní". Mesiac pred odletom skracujeme okno — vtedy je
 # každý lokálny prepad reálna príležitosť, lebo času na čakanie už niet.

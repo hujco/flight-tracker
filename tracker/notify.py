@@ -134,6 +134,35 @@ def detect_spike(series, hours, pct):
             "window_hours": hours}
 
 
+def build_digest(series, trip, today=None):
+    """Pravidelný súhrn — pošle sa, aj keď žiadny signál nevystrelil.
+
+    Bez neho je „všetko beží, cena je len vysoko" a „tracker je pokazený" pre
+    používateľa ten istý zážitok: nulové správy.
+    """
+    if not series:
+        return None
+    latest = series[-1]
+    price = latest["total"]
+    week = [x["total"] for x in stats.window_series(series, 7)]
+    day = stats.window_series(series, 1)
+    prev24 = day[0]["total"] if len(day) > 1 else None
+    return {
+        "kind": "digest",
+        "price": price,
+        "observed_at": latest["observed_at"],
+        "week_min": min(week),
+        "week_max": max(week),
+        "all_min": min(x["total"] for x in series),
+        "pct": stats.percentile_of([x["total"] for x in series], price),
+        "change_24h": (round(100.0 * (price - prev24) / prev24, 1)
+                       if prev24 else None),
+        "measurements": len(series),
+        "combo": _combo(trip),
+        "days_left": stats.days_until(trip["out"], today),
+    }
+
+
 def detect_signals(rows, trip, target=None, default_origin=None, today=None):
     """Všetky aktívne signály pre náš let, zoradené od najurgentnejšieho.
 
@@ -183,10 +212,39 @@ def detect_new_low(rows, presets, target):
     }
 
 
+def _format_digest(info, destination_label, origin_code, target, report_url):
+    c = info["combo"]
+    price = info["price"]
+    pct = info.get("pct")
+    lines = [
+        f"<b>📊 Denný súhrn — {origin_code}↔{destination_label}</b>",
+        f"{_fmt_date(c['out_date'])} → {_fmt_date(c['ret_date'])} · {c['nights']} nocí",
+        f"Teraz: <b>{price:.0f} €/os</b> "
+        f"(spolu {config.PERSONS} os.: {price * config.PERSONS:.0f} €)",
+        f"Za 7 dní: {info['week_min']:.0f} – {info['week_max']:.0f} €/os",
+    ]
+    if info.get("change_24h") is not None:
+        arrow = "▲" if info["change_24h"] > 0 else ("▼" if info["change_24h"] < 0 else "▬")
+        lines.append(f"Za 24 h: {arrow} {info['change_24h']:+.1f} %")
+    if pct is not None:
+        # 0 % = najlacnejšie, čo sme videli; 100 % = najdrahšie
+        verdict = "drahšie" if pct >= 50 else "lacnejšie"
+        lines.append(f"Je to {verdict} než {pct:.0f} % z {info['measurements']} meraní "
+                     f"(minimum {info['all_min']:.0f} €)")
+    lines.append(f"Cieľ: ≤ {target:.0f} €/os")
+    days_left = info.get("days_left")
+    if days_left is not None and days_left >= 0:
+        lines.append(f"⏳ Do odletu {days_left} dní")
+    lines.append(report_url)
+    return "\n".join(lines)
+
+
 def format_message(info, destination_label, origin_code, reference_per_person, target, report_url):
     c = info["combo"]
     price = info["price"]
     kind = info.get("kind", "target")
+    if kind == "digest":
+        return _format_digest(info, destination_label, origin_code, target, report_url)
     if kind == "spike":
         head = "📈 Cena stúpa — okno sa zatvára"
     elif kind == "window_low":
@@ -250,6 +308,24 @@ def _on_cooldown(conn, kind, now_iso):
     return (now - prev) < timedelta(hours=hours)
 
 
+def _due_digest(rows, trip, conn, now_iso):
+    """Súhrn, ak od POSLEDNÉHO alertu (akéhokoľvek druhu) ubehlo HEARTBEAT_HOURS.
+
+    Bez conn sa stav nedá sledovať, tak sa heartbeat neposiela vôbec — inak by
+    každý beh bez signálu poslal správu.
+    """
+    if conn is None:
+        return None
+    last = db.last_alert_any(conn)
+    now = stats.parse_ts(now_iso)
+    if last is not None and now is not None:
+        prev = stats.parse_ts(last["sent_at"])
+        if prev is not None and (now - prev) < timedelta(hours=config.HEARTBEAT_HOURS):
+            return None
+    series = stats.primary_trip_over_time(rows, trip, config.ORIGIN)
+    return build_digest(series, trip)
+
+
 def maybe_notify(rows, session=None, conn=None, now=None):
     """Alert LEN pre náš let (config.PRIMARY_TRIP) → Telegram.
 
@@ -264,12 +340,16 @@ def maybe_notify(rows, session=None, conn=None, now=None):
     trip = config.PRIMARY_TRIP
     now_iso = now or datetime.now(timezone.utc).isoformat(timespec="minutes")
     signals = detect_signals(rows, trip, config.ALERT_TARGET_EUR, config.ORIGIN)
-    if not signals:
-        return False, "žiadny aktívny signál"
     dest_label = _dest_label(trip["destination"])
     tag = f"{trip['origin']}↔{dest_label}"
     info = next((s for s in signals if not _on_cooldown(conn, s["kind"], now_iso)), None)
     if info is None:
+        # Nič nevystrelilo (alebo je všetko v cooldowne) → keď už dlho neprišlo nič,
+        # pošli aspoň súhrn. Ticho sa inak nedá odlíšiť od poruchy.
+        info = _due_digest(rows, trip, conn, now_iso)
+    if info is None:
+        if not signals:
+            return False, "žiadny aktívny signál"
         kinds = ", ".join(s["kind"] for s in signals)
         return False, f"{tag}: signály ({kinds}) v cooldowne"
     if not token or not chat_id:

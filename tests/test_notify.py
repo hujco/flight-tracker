@@ -1,3 +1,5 @@
+from datetime import date
+
 from tracker import notify, stats
 
 PRESETS = [
@@ -149,10 +151,13 @@ def test_maybe_notify_ignores_other_origin(monkeypatch):
 
 
 def test_maybe_notify_none_above_target(monkeypatch):
-    # Jedine meranie nad cielom (140) -> ziadny signal (na window_low/spike
-    # treba aspon dve merania, na target cenu <= 140)
+    # Jedine meranie nad cielom -> ziadny signal (na window_low/spike treba
+    # aspon dve merania). Cena je odvodena od configu, nech test neprestane
+    # davat zmysel pri zmene ALERT_TARGET_EUR.
+    above = notify.config.ALERT_TARGET_EUR + 100
     rows = [
-        _row("t1", "PVK", "OUT", "2026-09-06", 80.0, origin="BUD"), _row("t1", "PVK", "RET", "2026-09-13", 75.0, origin="BUD"),  # 155 > 140
+        _row("t1", "PVK", "OUT", "2026-09-06", above / 2, origin="BUD"),
+        _row("t1", "PVK", "RET", "2026-09-13", above / 2, origin="BUD"),
     ]
     s = _CaptureSession()
     monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
@@ -273,6 +278,61 @@ def test_maybe_notify_cooldown_blocks_repeat_of_same_kind(monkeypatch):
     ok3, msg3 = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-06T08:05")
     assert ok3 is False and "cooldowne" in msg3
     assert len(s.sent) == 2
+
+
+def test_digest_sent_when_nothing_fired_for_a_day(monkeypatch):
+    import sqlite3
+    from tracker import db
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    db.init_db(conn)
+    high = notify.config.ALERT_TARGET_EUR + 100
+    rows = [
+        _row("2026-08-01T06:00", "PVK", "OUT", "2026-09-06", high / 2, origin="BUD"),
+        _row("2026-08-01T06:00", "PVK", "RET", "2026-09-13", high / 2, origin="BUD"),
+        _row("2026-08-07T06:00", "PVK", "OUT", "2026-09-06", high / 2, origin="BUD"),
+        _row("2026-08-07T06:00", "PVK", "RET", "2026-09-13", high / 2, origin="BUD"),
+    ]
+    monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
+    s = _CaptureSession()
+    # ziadny signal (cena plocha a nad cielom), zaroven nikdy nic neposlane -> suhrn
+    ok, msg = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-07T06:05")
+    assert ok is True and "digest" in msg
+    assert "Denný súhrn" in s.sent[0]
+
+    # o hodinu neskor uz nie (heartbeat je 24 h)
+    ok2, _ = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-07T07:05")
+    assert ok2 is False and len(s.sent) == 1
+
+    # o 25 h zase ano
+    ok3, _ = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-08T07:05")
+    assert ok3 is True and len(s.sent) == 2
+
+
+def test_digest_not_sent_without_conn(monkeypatch):
+    # bez DB sa stav nedá sledovať -> heartbeat by posielal pri kazdom behu
+    high = notify.config.ALERT_TARGET_EUR + 100
+    rows = [
+        _row("2026-08-01T06:00", "PVK", "OUT", "2026-09-06", high / 2, origin="BUD"),
+        _row("2026-08-01T06:00", "PVK", "RET", "2026-09-13", high / 2, origin="BUD"),
+    ]
+    monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
+    s = _CaptureSession()
+    ok, _ = notify.maybe_notify(rows, session=s)
+    assert ok is False and len(s.sent) == 0
+
+
+def test_digest_message_has_decision_numbers():
+    series = _series(("2026-08-01T06:00", 200.0), ("2026-08-06T06:00", 180.0),
+                     ("2026-08-07T06:00", 222.0))
+    info = notify.build_digest(series, notify.config.PRIMARY_TRIP,
+                               today=date(2026, 8, 7))
+    msg = notify._format_digest(info, "Lefkada", "BUD", 180.0, "http://x")
+    assert "Denný súhrn" in msg and "222 €/os" in msg
+    assert "Za 7 dní: 180 – 222" in msg
+    # 2 z 3 merani boli lacnejsie -> 67 % (aktualna cena rata do menovatela)
+    assert "drahšie než 67 %" in msg
+    assert "Do odletu 30 dní" in msg
 
 
 def test_format_message_spike_says_buy_now():

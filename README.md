@@ -42,6 +42,7 @@ behu vyhodnotí **tri nezávislé signály**:
 | `target` | cena ≤ `ALERT_TARGET_EUR` (140 €/os) | ✅ / 🔥 kupuj |
 | `window_low` | najnižšie za posledných N dní, **aj nad cieľom** | 📉 príležitosť |
 | `spike` | rast ≥ `ALERT_SPIKE_PCT` (8 %) za 24 h | 📈 okno sa zatvára |
+| `digest` | `HEARTBEAT_HOURS` (24 h) neprišlo nič | 📊 denný súhrn |
 
 Pošle sa **prvý signál, ktorý prejde cooldownom** (`ALERT_COOLDOWN_HOURS`), takže
 jedno meranie nikdy nepošle dve správy. Keď je signál v cooldowne, padá sa na
@@ -54,7 +55,12 @@ do odletu menej než `NEAR_DEPARTURE_DAYS` (30) — vtedy sa už čakať nedá.
 > po zásahu historického minima (126,57 € dňa 13. 7.) natrvalo zamkla a alert prestal
 > chodiť — aj výborná cena 135 € by už neposlala nič. Preto sú signály rozbité.
 
-Odoslané alerty sa zapisujú do tabuľky `alerts` v `prices.db` (odtiaľ cooldown).
+`digest` je poistka proti ticheu: keď `HEARTBEAT_HOURS` neprišiel žiadny alert,
+pošle sa súhrn (aktuálna cena, rozsah za 7 dní, zmena za 24 h, percentil voči celej
+histórii, dní do odletu). Ticho tak nikdy neznamená „asi je to pokazené".
+
+Odoslané alerty sa zapisujú do tabuľky `alerts` v `prices.db` (odtiaľ cooldown
+aj heartbeat).
 
 Nastavenie (jednorazovo):
 1. V Telegrame napíš **@BotFather** → `/newbot` → získaš **bot token**.

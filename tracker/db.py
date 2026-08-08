@@ -107,6 +107,13 @@ def record_alert(conn, sent_at, kind, price, observed_at):
         )
 
 
+def last_alert_any(conn):
+    """Posledný odoslaný alert akéhokoľvek druhu (na heartbeat), alebo None."""
+    cur = conn.execute("SELECT * FROM alerts ORDER BY sent_at DESC LIMIT 1")
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
 def last_alert(conn, kind):
     """Posledný odoslaný alert daného druhu (na cooldown), alebo None."""
     cur = conn.execute(
