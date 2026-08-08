@@ -140,6 +140,28 @@ def test_hero_flat_price_no_seat_warning():
     assert "len pár sedadiel" not in report.build_report_html(older + _BUD_PRIMARY)
 
 
+# --- cas: zbiera sa v UTC, cita sa v CEST ------------------------------------
+
+def test_timestamp_is_shown_in_local_time_not_utc():
+    # 06:43 UTC = 08:43 v Bratislave (CEST). Predtym stranka ukazala 06:43 a
+    # vyzeralo to, ze data su o 2 h staršie nez su.
+    assert report._fmt_dt("2026-08-08T06:43+00:00") == "08.08.2026 08:43"
+
+
+def test_naive_timestamp_treated_as_utc():
+    # stare riadky (pred prechodom na UTC) nemaju offset, ale boli pisane v UTC
+    assert report._fmt_dt("2026-08-08T06:43") == report._fmt_dt("2026-08-08T06:43+00:00")
+
+
+def test_age_badge_marks_stale_data():
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    fresh = (now - timedelta(hours=1)).isoformat(timespec="minutes")
+    old = (now - timedelta(hours=9)).isoformat(timespec="minutes")
+    assert "age-stale" not in report._age_html(fresh)
+    assert "age-stale" in report._age_html(old) and "pred 9 h" in report._age_html(old)
+
+
 def test_report_empty():
     assert "Zatiaľ žiadne dáta" in report.build_report_html([])
 

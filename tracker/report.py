@@ -1,6 +1,7 @@
 import html
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import plotly.graph_objects as go
 
@@ -13,10 +14,50 @@ def _fmt_date(iso):
     return f"{d.day:02d}.{d.month:02d}.{d.year}"
 
 
-def _fmt_dt(iso):
-    """'2026-06-30T14:00' -> '30.06.2026 14:00' (EU)."""
+_LOCAL_TZ = "Europe/Bratislava"
+
+
+def _to_local(iso):
+    """observed_at -> aware datetime v našom pásme.
+
+    Zber beží v UTC (GitHub Actions), ale report číta človek v CEST. Bez prevodu
+    stránka ukazovala napr. 06:43, kým na hodinkách bolo 08:43 — vyzeralo to,
+    že dáta sú o 2 h staršie, než v skutočnosti sú.
+    Staré riadky bez offsetu boli tiež písané v UTC, tak ich tak aj berieme.
+    """
     dt = datetime.fromisoformat(iso)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        return dt.astimezone(ZoneInfo(_LOCAL_TZ))
+    except Exception:      # chýbajúca tz databáza → aspoň korektné UTC
+        return dt.astimezone(timezone.utc)
+
+
+def _fmt_dt(iso):
+    """'2026-08-08T06:43+00:00' -> '08.08.2026 08:43' (náš čas)."""
+    dt = _to_local(iso)
     return f"{dt.day:02d}.{dt.month:02d}.{dt.year} {dt.hour:02d}:{dt.minute:02d}"
+
+
+def _age_html(iso):
+    """Vek dát slovom + varovanie, keď zber vypadol.
+
+    Report sa pregeneruje aj po zlyhaní zberu, takže bez tohto vyzerá stará
+    stránka úplne normálne.
+    """
+    age_h = (datetime.now(timezone.utc) - _to_local(iso)).total_seconds() / 3600.0
+    if age_h < 0:
+        return ""
+    if age_h < 1:
+        label = f"pred {max(1, int(age_h * 60))} min"
+    elif age_h < 24:
+        label = f"pred {age_h:.0f} h"
+    else:
+        label = f"pred {age_h / 24:.0f} d"
+    # cron beží každé 2 h; GitHub ho vie oneskoriť, ale 6 h už je výpadok
+    stale = " age-stale" if age_h >= 6 else ""
+    return f"<span class='age{stale}'>{label}</span>"
 
 # Brand palette (dark dashboard: blue data + amber highlight)
 _COLORWAY = ["#3B82F6", "#F59E0B", "#60A5FA", "#FBBF24", "#93C5FD",
@@ -102,6 +143,11 @@ header { margin-bottom: 22px; }
 h1 { font-size: clamp(22px, 6vw, 30px); font-weight: 700; margin: 6px 0 4px;
   color: #F8FAFC; overflow-wrap: anywhere; }
 .updated { color: #94A3B8; font-size: 13px; font-family: 'Fira Code', monospace; }
+.age { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+  font: 600 11px 'Fira Sans', sans-serif; background: rgba(148,163,184,0.14);
+  color: #CBD5E1; border: 1px solid rgba(148,163,184,0.28); }
+.age-stale { background: rgba(248,113,113,0.16); color: #F87171;
+  border-color: rgba(248,113,113,0.45); }
 .caption { color: #94A3B8; font-size: 13px; margin: 2px 0 0; }
 .empty { color: #94A3B8; }
 
@@ -232,7 +278,9 @@ def _primary_trip_now(rows):
 
 def _primary_trip_fig(series):
     """Vývoj ceny nášho termínu — samostatný graf, aby hero nepotreboval nič nižšie."""
-    xs = [s["observed_at"] for s in series]
+    # os X tiež v našom čase — inak graf tvrdí niečo iné než hlavička nad ním
+    # (a miešanie naivných a +00:00 reťazcov si Plotly vykladá nekonzistentne)
+    xs = [_to_local(s["observed_at"]).replace(tzinfo=None).isoformat() for s in series]
     ys = [s["total"] for s in series]
     fig = go.Figure(go.Scatter(
         x=xs, y=ys, mode="lines+markers", name="Náš termín",
@@ -380,7 +428,7 @@ def build_report_html(rows):
   <header>
     <div class='eyebrow'>Ryanair price tracker · 6.–13.9.2026</div>
     <h1>Budapešť → Lefkada</h1>
-    <div class='updated'>Posledná aktualizácia: {html.escape(_fmt_dt(updated))}</div>
+    <div class='updated'>Posledná aktualizácia: {html.escape(_fmt_dt(updated))} {_age_html(updated)}</div>
   </header>
   {body}
   <footer>Dáta: services-api.ryanair.com · generované lokálne, bez LLM</footer>
