@@ -263,6 +263,27 @@ def _format_leg_low(info, destination_label, origin_code, report_url):
     return "\n".join(lines)
 
 
+def all_in_lines(fare_per_person):
+    """Čo reálne zaplatíme pri danej cene letenky — doplnky sú známe a fixné.
+
+    Sledovaná cena je holá letenka, ale rozhodujeme sa podľa sumy na účte.
+    Bez tohto sa porovnávala letenka s referenciou, ktorá doplnky obsahovala.
+    """
+    if not getattr(config, "OUT_LEG_BOUGHT", False):
+        return []
+    extras = getattr(config, "EXTRAS_PER_PERSON_PER_LEG_EUR", 0.0)
+    paid = getattr(config, "OUT_LEG_PAID_TOTAL_EUR", None)
+    if not extras or paid is None:
+        return []
+    ret_all_in = (fare_per_person + extras) * config.PERSONS
+    return [
+        f"S doplnkami: <b>{ret_all_in:.0f} €</b> za {config.PERSONS} os. "
+        f"(+{extras:.0f} €/os batožina, fasttrack, miestenky)",
+        f"Celá cesta: <b>{paid + ret_all_in:.0f} €</b> "
+        f"(odlet {paid:.0f} € už zaplatený · pred 2 r. {config.REFERENCE_PRICE_EUR:.0f} €)",
+    ]
+
+
 def _format_digest(info, destination_label, origin_code, target, report_url):
     c = info["combo"]
     price = info["price"]
@@ -282,6 +303,7 @@ def _format_digest(info, destination_label, origin_code, target, report_url):
         verdict = "drahšie" if pct >= 50 else "lacnejšie"
         lines.append(f"Je to {verdict} než {pct:.0f} % z {info['measurements']} meraní "
                      f"(minimum {info['all_min']:.0f} €)")
+    lines += all_in_lines(price)
     lines.append(f"Cieľ: ≤ {target:.0f} €/os")
     days_left = info.get("days_left")
     if days_left is not None and days_left >= 0:
@@ -318,6 +340,8 @@ def format_message(info, destination_label, origin_code, reference_per_person, t
     elif info.get("prev_low") is not None:
         lines.append(f"Predošlé minimum: {info['prev_low']:.0f} €/os")
     if kind != "spike":
+        # pri nákupnom signáli chce človek vidieť sumu, ktorú reálne zaplatí
+        lines += all_in_lines(price)
         lines.append(f"Cieľ: ≤ {target:.0f} €/os")
     days_left = info.get("days_left")
     if days_left is not None and days_left >= 0:

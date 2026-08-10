@@ -442,6 +442,23 @@ def test_digest_not_sent_without_conn(monkeypatch):
     assert ok is False and len(s.sent) == 0
 
 
+def test_messages_show_all_in_price_when_extras_known(monkeypatch):
+    # Sledujeme holu letenku, ale rozhodujeme sa podla sumy na ucte.
+    monkeypatch.setattr(notify.config, "OUT_LEG_BOUGHT", True)
+    monkeypatch.setattr(notify.config, "OUT_LEG_PAID_TOTAL_EUR", 151.0)
+    monkeypatch.setattr(notify.config, "EXTRAS_PER_PERSON_PER_LEG_EUR", 29.14)
+    monkeypatch.setattr(notify.config, "PERSONS", 2)
+    lines = notify.all_in_lines(134.0)
+    # (134 + 29.14) * 2 = 326; cela cesta 151 + 326 = 477
+    assert "326 €" in lines[0] and "2 os." in lines[0]
+    assert "477 €" in lines[1] and "151 €" in lines[1]
+
+
+def test_all_in_lines_silent_when_nothing_bought(monkeypatch):
+    monkeypatch.setattr(notify.config, "OUT_LEG_BOUGHT", False)
+    assert notify.all_in_lines(134.0) == []
+
+
 def test_digest_message_has_decision_numbers():
     series = _series(("2026-08-01T06:00", 200.0), ("2026-08-06T06:00", 180.0),
                      ("2026-08-07T06:00", 222.0))
