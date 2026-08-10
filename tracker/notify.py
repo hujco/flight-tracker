@@ -188,8 +188,11 @@ def detect_signals(rows, trip, target=None, default_origin=None, today=None):
     Poradie je zámerné: `target` je priama výzva kúpiť, `window_low` príležitosť,
     `spike` varovanie. Posiela sa len prvý, ktorý prejde cooldownom.
     """
-    target = target if target is not None else config.ALERT_TARGET_EUR
-    series = stats.primary_trip_over_time(rows, trip, default_origin)
+    out_bought = getattr(config, "OUT_LEG_BOUGHT", False)
+    if target is None:
+        target = (config.ALERT_TARGET_RET_EUR if out_bought
+                  else config.ALERT_TARGET_EUR)
+    series = stats.decision_series(rows, trip, default_origin, out_bought)
     if not series:
         return []
     days_left = stats.days_until(trip["out"], today)
@@ -200,8 +203,11 @@ def detect_signals(rows, trip, target=None, default_origin=None, today=None):
     found = [
         detect_target(series, target),
         detect_window_low(series, window),
-        # nohy pred spike: sú to nákupné príležitosti, spike je len varovanie
-        *detect_leg_lows(rows, trip, config.ALERT_LEG_WINDOW_DAYS, default_origin),
+        # nohy pred spike: sú to nákupné príležitosti, spike je len varovanie.
+        # Keď je odlet kúpený, rozhodovacou sériou UŽ JE návrat, takže by to
+        # bol ten istý signál dvakrát — a o kúpenom odlete hlásiť netreba.
+        *([] if out_bought
+          else detect_leg_lows(rows, trip, config.ALERT_LEG_WINDOW_DAYS, default_origin)),
         detect_spike(series, config.ALERT_SPIKE_HOURS, config.ALERT_SPIKE_PCT),
     ]
     combo = _combo(trip)
@@ -355,6 +361,13 @@ def _on_cooldown(conn, kind, now_iso):
     return (now - prev) < timedelta(hours=hours)
 
 
+def effective_target():
+    """Cieľ platný pre to, o čom sa ešte rozhodujeme (celý let vs. samotný návrat)."""
+    if getattr(config, "OUT_LEG_BOUGHT", False):
+        return config.ALERT_TARGET_RET_EUR
+    return config.ALERT_TARGET_EUR
+
+
 def _due_digest(rows, trip, conn, now_iso):
     """Súhrn, ak od POSLEDNÉHO alertu (akéhokoľvek druhu) ubehlo HEARTBEAT_HOURS.
 
@@ -369,7 +382,8 @@ def _due_digest(rows, trip, conn, now_iso):
         prev = stats.parse_ts(last["sent_at"])
         if prev is not None and (now - prev) < timedelta(hours=config.HEARTBEAT_HOURS):
             return None
-    series = stats.primary_trip_over_time(rows, trip, config.ORIGIN)
+    series = stats.decision_series(rows, trip, config.ORIGIN,
+                                   getattr(config, "OUT_LEG_BOUGHT", False))
     return build_digest(series, trip)
 
 
@@ -386,7 +400,7 @@ def maybe_notify(rows, session=None, conn=None, now=None):
     chat_id = os.environ.get("TELEGRAM_CHAT_ID") or config.TELEGRAM_CHAT_ID
     trip = config.PRIMARY_TRIP
     now_iso = now or datetime.now(timezone.utc).isoformat(timespec="minutes")
-    signals = detect_signals(rows, trip, config.ALERT_TARGET_EUR, config.ORIGIN)
+    signals = detect_signals(rows, trip, effective_target(), config.ORIGIN)
     dest_label = _dest_label(trip["destination"])
     tag = f"{trip['origin']}↔{dest_label}"
     info = next((s for s in signals if not _on_cooldown(conn, s["kind"], now_iso)), None)
@@ -404,7 +418,7 @@ def maybe_notify(rows, session=None, conn=None, now=None):
                        "ale chýba TELEGRAM_TOKEN")
     text = format_message(info, dest_label, trip["origin"],
                           config.REFERENCE_PER_PERSON_EUR,
-                          config.ALERT_TARGET_EUR, config.REPORT_URL)
+                          effective_target(), config.REPORT_URL)
     send_telegram(token, chat_id, text, session=session)
     if conn is not None:
         db.record_alert(conn, now_iso, info["kind"], info["price"], info["observed_at"])

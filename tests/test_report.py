@@ -140,6 +140,48 @@ def test_hero_flat_price_no_seat_warning():
     assert "len pár sedadiel" not in report.build_report_html(older + _BUD_PRIMARY)
 
 
+# --- rezim "odlet uz je kupeny" ----------------------------------------------
+
+def _bought(monkeypatch, paid=43.0):
+    monkeypatch.setattr(config, "OUT_LEG_BOUGHT", True)
+    monkeypatch.setattr(config, "OUT_LEG_PAID_EUR", paid)
+
+
+def test_hero_headlines_return_when_outbound_bought(monkeypatch):
+    _bought(monkeypatch)
+    rows = _at("2026-08-01T06:00", 50.0, 130.0) + _at("2026-08-10T06:00", 43.0, 166.0)
+    html = report.build_report_html(rows)
+    # velka cena = navrat (166), nie sucet (209) — o odlete uz nerozhodujeme
+    assert "<div class='hero-price'>166 €" in html
+    assert "<div class='hero-price'>209 €" not in html
+    assert "Ostáva kúpiť návrat" in html
+    assert "už kúpený" in html and "✓ kúpené 43 €" in html
+
+
+def test_hero_shows_real_total_including_paid_leg(monkeypatch):
+    _bought(monkeypatch, paid=43.0)
+    rows = _at("2026-08-01T06:00", 50.0, 130.0) + _at("2026-08-10T06:00", 43.0, 166.0)
+    html = report.build_report_html(rows)
+    # 43 zaplatene + 166 navrat = 209 za osobu, 418 za dve
+    assert "209 €" in html and "418 €" in html
+
+
+def test_verdict_uses_return_series_when_outbound_bought(monkeypatch):
+    _bought(monkeypatch)
+    # navrat rastie (130 -> 150 -> 166) -> je na maxime, verdikt "drahe",
+    # aj keby sucet vyzeral inak
+    rows = (_at("2026-08-01T06:00", 60.0, 130.0) + _at("2026-08-04T06:00", 55.0, 150.0)
+            + _at("2026-08-07T06:00", 50.0, 160.0) + _at("2026-08-10T06:00", 43.0, 166.0))
+    html = report.build_report_html(rows)
+    assert "Drahé oproti histórii" in html
+
+
+def test_hero_headlines_total_when_nothing_bought():
+    rows = _at("2026-08-01T06:00", 50.0, 130.0) + _at("2026-08-10T06:00", 43.0, 166.0)
+    html = report.build_report_html(rows)
+    assert "209 €" in html and "Ostáva kúpiť návrat" not in html
+
+
 # --- cas: zbiera sa v UTC, cita sa v CEST ------------------------------------
 
 def test_timestamp_is_shown_in_local_time_not_utc():

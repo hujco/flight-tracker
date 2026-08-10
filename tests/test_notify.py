@@ -327,6 +327,31 @@ def test_leg_low_message_says_it_can_be_bought_alone():
     assert "samostatne" in msg
 
 
+def test_signals_run_on_return_only_when_outbound_bought(monkeypatch):
+    monkeypatch.setattr(notify.config, "OUT_LEG_BOUGHT", True)
+    monkeypatch.setattr(notify.config, "ALERT_TARGET_RET_EUR", 137.0)
+    rows = []
+    for ts, out_p, ret_p in (("2026-08-01T06:00", 50.0, 160.0),
+                             ("2026-08-10T06:00", 60.0, 130.0)):   # sucet klesol len o 20
+        rows += [_row(ts, "PVK", "OUT", "2026-09-06", out_p, origin="BUD"),
+                 _row(ts, "PVK", "RET", "2026-09-13", ret_p, origin="BUD")]
+    sig = notify.detect_signals(rows, notify.config.PRIMARY_TRIP)
+    kinds = [s["kind"] for s in sig]
+    # navrat 130 <= ciel 137 -> target; a je to jeho minimum -> window_low
+    assert kinds[0] == "target"
+    assert sig[0]["price"] == 130.0          # cena NAVRATU, nie suctu (190)
+    # o kupenom odlete sa uz nehlasi
+    assert "out_low" not in kinds and "ret_low" not in kinds
+
+
+def test_effective_target_follows_bought_state(monkeypatch):
+    monkeypatch.setattr(notify.config, "OUT_LEG_BOUGHT", False)
+    assert notify.effective_target() == notify.config.ALERT_TARGET_EUR
+    monkeypatch.setattr(notify.config, "OUT_LEG_BOUGHT", True)
+    monkeypatch.setattr(notify.config, "ALERT_TARGET_RET_EUR", 137.0)
+    assert notify.effective_target() == 137.0
+
+
 def test_digest_sent_when_nothing_fired_for_a_day(monkeypatch):
     import sqlite3
     from tracker import db

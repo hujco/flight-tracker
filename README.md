@@ -55,6 +55,14 @@ behu vyhodnotí **tri nezávislé signály**:
 | `out_low` | odlet sám je najnižšie za 10 dní | 📉 kúp odlet |
 | `digest` | `HEARTBEAT_HOURS` (24 h) neprišlo nič | 📊 denný súhrn |
 
+### Režim „odlet už je kúpený"
+`OUT_LEG_BOUGHT = True` (odlet kúpený 10. 8. 2026 za `OUT_LEG_PAID_EUR`) prepne
+rozhodovaciu veličinu zo súčtu oboch nôh na **samotný návrat** — súčet by miešal
+cenu, ktorú už ovplyvniť nemôžeme, s tou, ktorú áno. Platí pre hero, verdikt aj
+alerty; cieľom je `ALERT_TARGET_RET_EUR` (= `ALERT_TARGET_EUR` − zaplatený odlet).
+Signály `out_low`/`ret_low` sa vtedy vypnú (rozhodovacia séria už JE návrat).
+Odlet sa naďalej zbiera a report ho ukazuje ako zaplatený fakt + reálny súčet.
+
 Signály jednotlivých nôh existujú preto, že **návrat tvorí ~80 % sumy** a jeho pohyb
 v súčte prehluší lacný odlet. Reálny príklad: 3. 8. spadol odlet z 49,99 na 42,99 €,
 ale súčet vtedy stúpal — podľa súčtu by neprišlo nič. Jednosmerné letenky sa dajú

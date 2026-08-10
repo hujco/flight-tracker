@@ -260,20 +260,29 @@ _TOGGLE_JS = """<script>
 </script>"""
 
 
+def _out_bought():
+    return getattr(config, "OUT_LEG_BOUGHT", False)
+
+
 def _primary_trip_series(rows):
-    """Cena NÁŠHO fixného letu v čase (delegované do stats — jeden zdroj pravdy)."""
-    return stats.primary_trip_over_time(rows, config.PRIMARY_TRIP, config.ORIGIN)
+    """Séria, o ktorej sa ešte rozhodujeme (súčet, alebo len návrat po kúpe odletu)."""
+    return stats.decision_series(rows, config.PRIMARY_TRIP, config.ORIGIN,
+                                 _out_bought())
 
 
 def _primary_trip_now(rows):
-    """Cena nášho hlavného fixného letu (config.PRIMARY_TRIP) pri poslednom meraní."""
+    """Aktuálny stav toho, o čom sa rozhodujeme + ceny oboch nôh na kontext."""
     series = _primary_trip_series(rows)
     if not series:
         return None
     t = config.PRIMARY_TRIP
     nights = (date.fromisoformat(t["ret"]) - date.fromisoformat(t["out"])).days
-    return {**series[-1], "nights": nights,
-            "low": min(s["total"] for s in series)}
+    legs = stats.primary_trip_over_time(rows, t, config.ORIGIN)
+    info = {**series[-1], "nights": nights, "low": min(s["total"] for s in series)}
+    if legs:                       # ceny nôh sú stále sledované, aj tá kúpená
+        info.setdefault("out_price", legs[-1]["out_price"])
+        info.setdefault("ret_price", legs[-1]["ret_price"])
+    return info
 
 
 def _primary_trip_fig(series):
@@ -379,11 +388,34 @@ def _primary_hero_html(rows):
                     f" · teraz +{pp - low:.0f} €</div>")
 
     chart = _chart_html(_primary_trip_fig(series), height="260px")
+
+    if _out_bought():
+        paid = config.OUT_LEG_PAID_EUR
+        eyebrow = "Ostáva kúpiť návrat"
+        headline = (f"Návrat z {_dest_to(t['destination'])} do "
+                    f"{_origin_from(t['origin'])} · {_fmt_date(t['ret'])}")
+        sub = (f"{info['nights']} nocí · odlet {_fmt_date(t['out'])} už kúpený "
+               f"za {paid:.0f} €/os")
+        # Spolu = zaplatený odlet + aktuálny návrat, aby bolo vidno reálnu sumu
+        legs_html = (f"<div class='hero-legs'>Odlet {_fmt_date(t['out'])}: "
+                     f"<b>✓ kúpené {paid:.0f} €</b>"
+                     f"&nbsp;·&nbsp; Spolu za osobu by vyšlo <b>{paid + pp:.0f} €</b>"
+                     f"&nbsp;·&nbsp; {_DEFAULT_PERSONS} os.: "
+                     f"<b>{(paid + pp) * _DEFAULT_PERSONS:.0f} €</b></div>")
+    else:
+        eyebrow = "Náš let"
+        headline = (f"Z {_origin_from(t['origin'])} do {_dest_to(t['destination'])}"
+                    f" · {_fmt_date(t['out'])} → {_fmt_date(t['ret'])}")
+        sub = (f"{info['nights']} nocí · fixný termín · Ryanair "
+               f"{t['origin']}↔{t['destination']}")
+        legs_html = (f"<div class='hero-legs'>Odlet {_fmt_date(t['out'])}: "
+                     f"<b>{info['out_price']:.0f} €</b>&nbsp;·&nbsp; "
+                     f"Návrat {_fmt_date(t['ret'])}: <b>{info['ret_price']:.0f} €</b></div>")
+
     return f"""<section class='hero'>
-  <div class='hero-eyebrow'>Náš let</div>
-  <h2 class='hero-title'>Z {html.escape(_origin_from(t['origin']))} do {html.escape(_dest_to(t['destination']))}
-    · {_fmt_date(t['out'])} → {_fmt_date(t['ret'])}</h2>
-  <p class='caption'>{info['nights']} nocí · fixný termín · Ryanair {html.escape(t['origin'])}↔{html.escape(t['destination'])}</p>
+  <div class='hero-eyebrow'>{html.escape(eyebrow)}</div>
+  <h2 class='hero-title'>{html.escape(headline)}</h2>
+  <p class='caption'>{html.escape(sub)}</p>
   {_persons_toggle_html()}
   <div class='hero-card' data-pp='{pp:.2f}'>
     <div class='hero-price'>{pp:.0f} €<span class='cmp-unit'> /os</span></div>
@@ -391,8 +423,7 @@ def _primary_hero_html(rows):
   </div>
   {low_html}
   {_verdict_html(series, pp)}
-  <div class='hero-legs'>Odlet {_fmt_date(t['out'])}: <b>{info['out_price']:.0f} €</b>
-    &nbsp;·&nbsp; Návrat {_fmt_date(t['ret'])}: <b>{info['ret_price']:.0f} €</b></div>
+  {legs_html}
   <div class='hero-chart'>{chart}</div>
 </section>"""
 

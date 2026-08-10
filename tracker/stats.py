@@ -178,6 +178,20 @@ def leg_over_time(rows, trip, direction, default_origin=None):
     return [{"observed_at": ts, "price": by_ts[ts]} for ts in sorted(by_ts)]
 
 
+def decision_series(rows, trip, default_origin=None, out_bought=False):
+    """Séria, podľa ktorej sa reálne rozhodujeme — jeden zdroj pravdy pre report aj alerty.
+
+    Kým nie je nič kúpené, je to súčet oboch nôh. Keď je odlet kúpený, miešal by
+    súčet cenu, ktorú už ovplyvniť nemôžeme, s tou, ktorú áno — vtedy je
+    rozhodovacou veličinou samotný návrat.
+    Kľúč ostáva "total", nech naň sedia všetci existujúci konzumenti.
+    """
+    if out_bought:
+        return [{"observed_at": x["observed_at"], "total": x["price"]}
+                for x in leg_over_time(rows, trip, "RET", default_origin)]
+    return primary_trip_over_time(rows, trip, default_origin)
+
+
 def cheapest_roundtrip_over_time(rows, min_nights=0, max_nights=None):
     by_ts = defaultdict(list)
     for r in rows:

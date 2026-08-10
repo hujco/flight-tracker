@@ -62,6 +62,19 @@ ALERT_COOLDOWN_HOURS = {"target": 12, "window_low": 12, "spike": 48,
 # Jednotlivé nohy sa dajú kúpiť samostatne a návrat tvorí ~80 % sumy, takže
 # jeho pohyb v súčte prehluší lacný odlet. Preto vlastný, kratší window.
 ALERT_LEG_WINDOW_DAYS = 10
+
+# ODLET JE KÚPENÝ (10. 8. 2026). Odteraz sa rozhodujeme už len o návrate —
+# súčet oboch nôh by miešal cenu, ktorú nemôžeme ovplyvniť, s tou, ktorú áno.
+# Hero, verdikt aj alerty preto bežia nad samotným návratom.
+OUT_LEG_BOUGHT = True
+# Cena/os, ktorú sme za odlet reálne zaplatili. ODHAD z poslednej sledovanej
+# ceny (42,99 € držalo od 3. 8.) — ak sme zaplatili inak, prepíš tu.
+OUT_LEG_PAID_EUR = 42.99
+
+# Cieľ pre samotný návrat. Odvodený tak, aby zodpovedal pôvodnému cieľu za celý
+# let: ALERT_TARGET_EUR (180) − zaplatený odlet ≈ 137 €. Nie je to mŕtve číslo:
+# za posledné 2 týždne bol návrat na 130,87 €, teda pod ním.
+ALERT_TARGET_RET_EUR = round(ALERT_TARGET_EUR - OUT_LEG_PAID_EUR, 2)
 REPORT_URL = "https://hujco.github.io/flight-tracker/"
 # chat id nie je tajné (bez tokenu sa s ním nedá nič) → môže byť tu; token ostáva v Secrets
 TELEGRAM_CHAT_ID = "8804095194"
