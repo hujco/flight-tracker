@@ -280,10 +280,14 @@ def test_maybe_notify_cooldown_blocks_repeat_of_same_kind(monkeypatch):
     ok4, msg4 = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-06T09:05")
     assert ok4 is True and "out_low" in msg4
 
-    # vsetko odoslane a heartbeat este nedozrel -> az teraz ticho
+    # vsetky signaly v cooldowne, ale dnes este nebol ranny suhrn -> posle sa
     ok5, msg5 = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-06T10:05")
-    assert ok5 is False and "cooldowne" in msg5
-    assert len(s.sent) == 4
+    assert ok5 is True and "digest" in msg5
+
+    # az teraz ticho: signaly v cooldowne aj suhrn uz dnes bol
+    ok6, msg6 = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-06T11:05")
+    assert ok6 is False and "cooldowne" in msg6
+    assert len(s.sent) == 5
 
 
 def test_leg_low_fires_when_total_is_high():
@@ -350,6 +354,50 @@ def test_effective_target_follows_bought_state(monkeypatch):
     monkeypatch.setattr(notify.config, "OUT_LEG_BOUGHT", True)
     monkeypatch.setattr(notify.config, "ALERT_TARGET_RET_EUR", 137.0)
     assert notify.effective_target() == 137.0
+
+
+def _digest_conn():
+    import sqlite3
+    from tracker import db
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    db.init_db(conn)
+    return conn
+
+
+def test_morning_digest_fires_on_first_run_after_seven_local():
+    conn = _digest_conn()
+    # 04:30 UTC = 06:30 CEST -> este skoro
+    assert notify._morning_due(conn, "2026-08-11T04:30+00:00") is False
+    # 05:10 UTC = 07:10 CEST -> prvy beh po 7:00
+    assert notify._morning_due(conn, "2026-08-11T05:10+00:00") is True
+
+
+def test_morning_digest_only_once_per_day():
+    from tracker import db
+    conn = _digest_conn()
+    db.record_alert(conn, "2026-08-11T05:10+00:00", "digest", 166.0, "x")
+    # neskor v ten isty den uz nie
+    assert notify._morning_due(conn, "2026-08-11T09:00+00:00") is False
+    assert notify._morning_due(conn, "2026-08-11T19:00+00:00") is False
+    # nasledujuce rano zase ano
+    assert notify._morning_due(conn, "2026-08-12T05:10+00:00") is True
+
+
+def test_morning_digest_uses_local_day_not_utc_day():
+    from tracker import db
+    conn = _digest_conn()
+    # 22:30 UTC 11.8. = 00:30 CEST 12.8. -> lokalne uz novy den, ale este pred 7:00
+    db.record_alert(conn, "2026-08-11T05:10+00:00", "digest", 166.0, "x")
+    assert notify._morning_due(conn, "2026-08-11T22:30+00:00") is False
+
+
+def test_morning_digest_independent_of_other_alerts():
+    from tracker import db
+    conn = _digest_conn()
+    # spike prisiel o 6:00 CEST; ranny suhrn ma aj tak prist
+    db.record_alert(conn, "2026-08-11T04:00+00:00", "spike", 200.0, "x")
+    assert notify._morning_due(conn, "2026-08-11T05:10+00:00") is True
 
 
 def test_digest_sent_when_nothing_fired_for_a_day(monkeypatch):

@@ -39,8 +39,13 @@ INCLUDE_EXTRAS = False
 # za 14 dní), preto je pod ňou ešte HEARTBEAT_HOURS súhrn.
 ALERT_TARGET_EUR = 180.0
 
-# Keď X hodín neprišiel žiadny alert, pošli súhrn — aby ticho nikdy neznamenalo
-# „asi je to pokazené". Mesiac pred odletom je denný kontakt primeraný.
+# Ranný súhrn: prvý beh v daný deň od tejto hodiny (NÁŠHO času) pošle prehľad,
+# nech je hneď ráno jasné, na akej cene deň začína. Nie presne o 7:00 —
+# scheduled workflows na GitHube sa oneskorujú, takže je to „prvý beh po 7:00".
+DIGEST_HOUR_LOCAL = 7
+
+# Poistka, keby ranný beh vypadol: keď X hodín neprišlo vôbec nič, pošli súhrn.
+# Ticho nikdy nesmie znamenať „asi je to pokazené".
 HEARTBEAT_HOURS = 24
 
 # „Najnižšie za posledných N dní". Mesiac pred odletom skracujeme okno — vtedy je

@@ -79,9 +79,18 @@ do odletu menej než `NEAR_DEPARTURE_DAYS` (30) — vtedy sa už čakať nedá.
 > po zásahu historického minima (126,57 € dňa 13. 7.) natrvalo zamkla a alert prestal
 > chodiť — aj výborná cena 135 € by už neposlala nič. Preto sú signály rozbité.
 
-`digest` je poistka proti ticheu: keď `HEARTBEAT_HOURS` neprišiel žiadny alert,
-pošle sa súhrn (aktuálna cena, rozsah za 7 dní, zmena za 24 h, percentil voči celej
-histórii, dní do odletu). Ticho tak nikdy neznamená „asi je to pokazené".
+`digest` chodí **každé ráno**: prvý beh v daný deň po `DIGEST_HOUR_LOCAL` (7:00
+nášho času) pošle prehľad — aktuálna cena, rozsah za 7 dní, zmena za 24 h,
+percentil voči celej histórii, dní do odletu. Posiela sa nezávisle od ostatných
+alertov a najviac raz denne (podľa **lokálneho** dňa, nie UTC).
+
+> Nie je to presne 7:00. Scheduled workflows na GitHube sa oneskorujú, preto je
+> naviazaný na *prvý beh po* tej hodine. Podľa reálnych časov behov za 39 dní by
+> chodil medzi **07:18 a 09:05**, väčšinou okolo 07:40. Cron má kvôli tomu
+> pridaný samostatný záznam `0 5 * * *` (= 07:00 CEST).
+
+Ak by ranný beh vypadol úplne, `HEARTBEAT_HOURS` (24 h) je poistka — ticho nikdy
+nesmie znamenať „asi je to pokazené".
 
 Odoslané alerty sa zapisujú do tabuľky `alerts` v `prices.db` (odtiaľ cooldown
 aj heartbeat).

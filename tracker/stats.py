@@ -1,9 +1,28 @@
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 
 def _nights_between(out_date, ret_date):
     return (date.fromisoformat(ret_date) - date.fromisoformat(out_date)).days
+
+
+LOCAL_TZ = "Europe/Bratislava"
+
+
+def to_local(value):
+    """ISO reťazec alebo datetime -> aware datetime v našom pásme.
+
+    Zber beží v UTC, ale všetko, čo číta človek (report, čas ranného súhrnu),
+    má byť v jeho čase. Naivné hodnoty sú staré riadky — tie boli písané v UTC.
+    """
+    dt = value if isinstance(value, datetime) else datetime.fromisoformat(value)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        return dt.astimezone(ZoneInfo(LOCAL_TZ))
+    except Exception:      # chýbajúca tz databáza → aspoň korektné UTC
+        return dt.astimezone(timezone.utc)
 
 
 def parse_ts(value):

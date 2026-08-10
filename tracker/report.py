@@ -1,7 +1,6 @@
 import html
 from datetime import date, datetime, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import plotly.graph_objects as go
 
@@ -14,24 +13,13 @@ def _fmt_date(iso):
     return f"{d.day:02d}.{d.month:02d}.{d.year}"
 
 
-_LOCAL_TZ = "Europe/Bratislava"
-
-
 def _to_local(iso):
-    """observed_at -> aware datetime v našom pásme.
+    """observed_at -> aware datetime v našom pásme (jeden zdroj pravdy v stats).
 
-    Zber beží v UTC (GitHub Actions), ale report číta človek v CEST. Bez prevodu
-    stránka ukazovala napr. 06:43, kým na hodinkách bolo 08:43 — vyzeralo to,
-    že dáta sú o 2 h staršie, než v skutočnosti sú.
-    Staré riadky bez offsetu boli tiež písané v UTC, tak ich tak aj berieme.
+    Bez prevodu stránka ukazovala napr. 06:43, kým na hodinkách bolo 08:43 —
+    vyzeralo to, že dáta sú o 2 h staršie, než v skutočnosti sú.
     """
-    dt = datetime.fromisoformat(iso)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    try:
-        return dt.astimezone(ZoneInfo(_LOCAL_TZ))
-    except Exception:      # chýbajúca tz databáza → aspoň korektné UTC
-        return dt.astimezone(timezone.utc)
+    return stats.to_local(iso)
 
 
 def _fmt_dt(iso):

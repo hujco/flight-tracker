@@ -368,20 +368,43 @@ def effective_target():
     return config.ALERT_TARGET_EUR
 
 
-def _due_digest(rows, trip, conn, now_iso):
-    """Súhrn, ak od POSLEDNÉHO alertu (akéhokoľvek druhu) ubehlo HEARTBEAT_HOURS.
+def _morning_due(conn, now_iso):
+    """Prvý beh v daný deň po DIGEST_HOUR_LOCAL (v našom čase).
 
-    Bez conn sa stav nedá sledovať, tak sa heartbeat neposiela vôbec — inak by
-    každý beh bez signálu poslal správu.
+    Zámerne nie „presne o 7:00": cron na GitHube behá nepravidelne a občas beh
+    vynechá, takže sa viažeme na prvý beh po tej hodine, nie na konkrétny čas.
+    """
+    now_local = stats.to_local(now_iso)
+    if now_local.hour < config.DIGEST_HOUR_LOCAL:
+        return False
+    last = db.last_alert(conn, "digest")
+    if last is None:
+        return True
+    return stats.to_local(last["sent_at"]).date() < now_local.date()
+
+
+def _heartbeat_due(conn, now_iso):
+    """Poistka: od POSLEDNÉHO alertu (akéhokoľvek druhu) ubehlo HEARTBEAT_HOURS."""
+    last = db.last_alert_any(conn)
+    now = stats.parse_ts(now_iso)
+    if last is None or now is None:
+        return True
+    prev = stats.parse_ts(last["sent_at"])
+    if prev is None:
+        return True
+    return (now - prev) >= timedelta(hours=config.HEARTBEAT_HOURS)
+
+
+def _due_digest(rows, trip, conn, now_iso):
+    """Ranný súhrn, prípadne heartbeat, keď ranný beh vypadol.
+
+    Bez conn sa stav nedá sledovať, tak sa neposiela vôbec — inak by každý beh
+    bez signálu poslal správu.
     """
     if conn is None:
         return None
-    last = db.last_alert_any(conn)
-    now = stats.parse_ts(now_iso)
-    if last is not None and now is not None:
-        prev = stats.parse_ts(last["sent_at"])
-        if prev is not None and (now - prev) < timedelta(hours=config.HEARTBEAT_HOURS):
-            return None
+    if not (_morning_due(conn, now_iso) or _heartbeat_due(conn, now_iso)):
+        return None
     series = stats.decision_series(rows, trip, config.ORIGIN,
                                    getattr(config, "OUT_LEG_BOUGHT", False))
     return build_digest(series, trip)

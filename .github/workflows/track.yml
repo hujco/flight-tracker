@@ -3,6 +3,8 @@ name: track
 on:
   schedule:
     - cron: '0 */2 * * *'   # každé 2 hodiny (UTC) — hodinovo bolo zbytočné, 3h zas málo časté
+    - cron: '0 5 * * *'     # 05:00 UTC = 07:00 CEST — beh pre ranný súhrn
+                            # (*/2 dáva 04:00 a 06:00 UTC, teda 06:00 a 08:00 nášho času)
   workflow_dispatch:        # manuálne spustenie z GitHub UI / gh
     inputs:
       test_alert:
