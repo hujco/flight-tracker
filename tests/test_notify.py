@@ -274,10 +274,57 @@ def test_maybe_notify_cooldown_blocks_repeat_of_same_kind(monkeypatch):
     ok2, msg2 = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-06T07:05")
     assert ok2 is True and "window_low" in msg2
 
-    # oba uz odoslane -> tretie volanie mlci
+    # obe nohy tiez klesli -> dalsie v poradi su ich vlastne signaly
     ok3, msg3 = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-06T08:05")
-    assert ok3 is False and "cooldowne" in msg3
-    assert len(s.sent) == 2
+    assert ok3 is True and "ret_low" in msg3      # navrat prvy, tvori vacsinu sumy
+    ok4, msg4 = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-06T09:05")
+    assert ok4 is True and "out_low" in msg4
+
+    # vsetko odoslane a heartbeat este nedozrel -> az teraz ticho
+    ok5, msg5 = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-06T10:05")
+    assert ok5 is False and "cooldowne" in msg5
+    assert len(s.sent) == 4
+
+
+def test_leg_low_fires_when_total_is_high():
+    # Realny scenar z 10.8.: sucet 209 € je vysoko (ziadny signal zo suctu),
+    # ale odlet je pritom na minime za okno. Podla suctu by neprislo nic.
+    rows = []
+    for ts, out_p, ret_p in (("2026-08-01T06:00", 50.0, 130.0),
+                             ("2026-08-05T06:00", 61.0, 150.0),
+                             ("2026-08-10T06:00", 43.0, 166.0)):   # sucet stupol
+        rows += [_row(ts, "PVK", "OUT", "2026-09-06", out_p, origin="BUD"),
+                 _row(ts, "PVK", "RET", "2026-09-13", ret_p, origin="BUD")]
+    kinds = [s["kind"] for s in notify.detect_signals(rows, notify.config.PRIMARY_TRIP)]
+    assert "out_low" in kinds          # odlet klesol
+    assert "ret_low" not in kinds      # navrat stupol
+    assert "window_low" not in kinds   # sucet stupol -> zo suctu nic
+
+
+def test_leg_low_prefers_return_leg():
+    # Navrat tvori ~80 % sumy -> ked klesnu obe, hlas najprv navrat
+    rows = []
+    for ts, out_p, ret_p in (("2026-08-01T06:00", 60.0, 170.0),
+                             ("2026-08-10T06:00", 43.0, 150.0)):
+        rows += [_row(ts, "PVK", "OUT", "2026-09-06", out_p, origin="BUD"),
+                 _row(ts, "PVK", "RET", "2026-09-13", ret_p, origin="BUD")]
+    legs = [s["kind"] for s in
+            notify.detect_leg_lows(rows, notify.config.PRIMARY_TRIP, 10)]
+    assert legs == ["ret_low", "out_low"]
+
+
+def test_leg_low_message_says_it_can_be_bought_alone():
+    info = {"kind": "ret_low", "direction": "RET", "price": 133.0, "prev_low": 150.0,
+            "all_min": 96.0, "pct": 20.0, "window_days": 10, "days_left": 27,
+            "observed_at": "t",
+            "combo": {"out_date": "2026-09-06", "ret_date": "2026-09-13",
+                      "nights": 7, "label": "7 nocí"}}
+    msg = notify.format_message(info, "Lefkada", "BUD", 117.0, 180.0, "http://x")
+    assert "Návrat je najnižšie za 10 dní" in msg
+    assert "Lefkada→BUD 13.09.2026" in msg and "133 €/os" in msg
+    assert "historické minimum 96 €" in msg
+    assert "Lacnejšie než 80 % histórie" in msg
+    assert "samostatne" in msg
 
 
 def test_digest_sent_when_nothing_fired_for_a_day(monkeypatch):

@@ -51,7 +51,14 @@ behu vyhodnotí **tri nezávislé signály**:
 | `target` | cena ≤ `ALERT_TARGET_EUR` (140 €/os) | ✅ / 🔥 kupuj |
 | `window_low` | najnižšie za posledných N dní, **aj nad cieľom** | 📉 príležitosť |
 | `spike` | rast ≥ `ALERT_SPIKE_PCT` (8 %) za 24 h | 📈 okno sa zatvára |
+| `ret_low` | návrat sám je najnižšie za `ALERT_LEG_WINDOW_DAYS` (10 dní) | 📉 kúp návrat |
+| `out_low` | odlet sám je najnižšie za 10 dní | 📉 kúp odlet |
 | `digest` | `HEARTBEAT_HOURS` (24 h) neprišlo nič | 📊 denný súhrn |
+
+Signály jednotlivých nôh existujú preto, že **návrat tvorí ~80 % sumy** a jeho pohyb
+v súčte prehluší lacný odlet. Reálny príklad: 3. 8. spadol odlet z 49,99 na 42,99 €,
+ale súčet vtedy stúpal — podľa súčtu by neprišlo nič. Jednosmerné letenky sa dajú
+kúpiť samostatne, takže je to akcieschopný signál. Návrat má prednosť pred odletom.
 
 Pošle sa **prvý signál, ktorý prejde cooldownom** (`ALERT_COOLDOWN_HOURS`), takže
 jedno meranie nikdy nepošle dve správy. Keď je signál v cooldowne, padá sa na

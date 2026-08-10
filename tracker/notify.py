@@ -95,7 +95,7 @@ def detect_target(series, target):
             "all_time_low": not prev or latest["total"] < min(prev)}
 
 
-def detect_window_low(series, days):
+def detect_window_low(series, days, key="total", kind="window_low"):
     """Najnižšie za posledných `days` dní — BEZ cenového stropu.
 
     Toto je oprava pôvodnej logiky: podmienka „absolútne minimum A ZÁROVEŇ ≤ cieľ"
@@ -106,12 +106,31 @@ def detect_window_low(series, days):
     if len(win) < 2:
         return None
     latest = win[-1]
-    prev = [s["total"] for s in win[:-1]]
-    if latest["total"] >= min(prev):
+    prev = [s[key] for s in win[:-1]]
+    if latest[key] >= min(prev):
         return None
-    return {"kind": "window_low", "price": latest["total"],
+    return {"kind": kind, "price": latest[key],
             "observed_at": latest["observed_at"], "prev_low": min(prev),
             "window_days": days}
+
+
+def detect_leg_lows(rows, trip, days, default_origin=None):
+    """Lokálne minimum jednotlivých nôh — signál, ktorý súčet nevie zachytiť.
+
+    Príklad z reálnych dát (10.8.): súčet 209 € bol vysoko, ale odlet bol pritom
+    na 14-dňovom minime (42,99 €). Podľa súčtu by neprišlo nič.
+    """
+    found = []
+    for direction in ("RET", "OUT"):   # návrat prvý — tvorí ~80 % sumy
+        series = stats.leg_over_time(rows, trip, direction, default_origin)
+        info = detect_window_low(series, days, key="price",
+                                 kind=f"{direction.lower()}_low")
+        if info:
+            all_prices = [s["price"] for s in series]
+            found.append({**info, "direction": direction,
+                          "all_min": min(all_prices),
+                          "pct": stats.percentile_of(all_prices, info["price"])})
+    return found
 
 
 def detect_spike(series, hours, pct):
@@ -181,6 +200,8 @@ def detect_signals(rows, trip, target=None, default_origin=None, today=None):
     found = [
         detect_target(series, target),
         detect_window_low(series, window),
+        # nohy pred spike: sú to nákupné príležitosti, spike je len varovanie
+        *detect_leg_lows(rows, trip, config.ALERT_LEG_WINDOW_DAYS, default_origin),
         detect_spike(series, config.ALERT_SPIKE_HOURS, config.ALERT_SPIKE_PCT),
     ]
     combo = _combo(trip)
@@ -210,6 +231,30 @@ def detect_new_low(rows, presets, target):
         "combo": combo,
         "prev_low": min(prev) if prev else None,
     }
+
+
+def _format_leg_low(info, destination_label, origin_code, report_url):
+    c = info["combo"]
+    out_leg = info["direction"] == "OUT"
+    who = "Odlet" if out_leg else "Návrat"
+    route = (f"{origin_code}→{destination_label}" if out_leg
+             else f"{destination_label}→{origin_code}")
+    day = c["out_date"] if out_leg else c["ret_date"]
+    lines = [
+        f"<b>📉 {who} je najnižšie za {info['window_days']} dní</b>",
+        f"{route} {_fmt_date(day)}: <b>{info['price']:.0f} €/os</b>",
+        f"Predtým v okne najmenej: {info['prev_low']:.0f} € · "
+        f"historické minimum {info['all_min']:.0f} €",
+    ]
+    if info.get("pct") is not None:
+        lines.append(f"Lacnejšie než {100 - info['pct']:.0f} % histórie tejto nohy")
+    days_left = info.get("days_left")
+    if days_left is not None and days_left >= 0:
+        lines.append(f"⏳ Do odletu {days_left} dní")
+    # jednosmerné letenky sa dajú kúpiť samostatne — o tom celý tento signál je
+    lines.append("Túto nohu vieš kúpiť samostatne, bez druhej.")
+    lines.append(report_url)
+    return "\n".join(lines)
 
 
 def _format_digest(info, destination_label, origin_code, target, report_url):
@@ -245,6 +290,8 @@ def format_message(info, destination_label, origin_code, reference_per_person, t
     kind = info.get("kind", "target")
     if kind == "digest":
         return _format_digest(info, destination_label, origin_code, target, report_url)
+    if kind in ("out_low", "ret_low"):
+        return _format_leg_low(info, destination_label, origin_code, report_url)
     if kind == "spike":
         head = "📈 Cena stúpa — okno sa zatvára"
     elif kind == "window_low":

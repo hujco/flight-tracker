@@ -56,7 +56,12 @@ ALERT_SPIKE_HOURS = 24
 # Aby alerty nespamovali: rovnaký druh signálu najskôr po N hodinách. Keď je signál
 # v cooldowne, padá sa na ďalší v poradí — takže nový nižší prepad počas „target"
 # cooldownu prejde cez window_low a neutopí sa.
-ALERT_COOLDOWN_HOURS = {"target": 12, "window_low": 12, "spike": 48}
+ALERT_COOLDOWN_HOURS = {"target": 12, "window_low": 12, "spike": 48,
+                        "ret_low": 12, "out_low": 12}
+
+# Jednotlivé nohy sa dajú kúpiť samostatne a návrat tvorí ~80 % sumy, takže
+# jeho pohyb v súčte prehluší lacný odlet. Preto vlastný, kratší window.
+ALERT_LEG_WINDOW_DAYS = 10
 REPORT_URL = "https://hujco.github.io/flight-tracker/"
 # chat id nie je tajné (bez tokenu sa s ním nedá nič) → môže byť tu; token ostáva v Secrets
 TELEGRAM_CHAT_ID = "8804095194"

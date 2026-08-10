@@ -157,6 +157,27 @@ def primary_trip_over_time(rows, trip, default_origin=None):
     return series
 
 
+def leg_over_time(rows, trip, direction, default_origin=None):
+    """Cena JEDNEJ nohy nášho letu v čase: [{observed_at, price}, ...].
+
+    Súčet oboch nôh vie zakryť, že jedna z nich je na minime — návrat tvorí
+    ~80 % sumy, takže jeho pohyb prehluší lacný odlet. Preto sledujeme aj nohy
+    zvlášť (jednosmerné letenky sa dajú kúpiť samostatne).
+    """
+    flight_date = trip["out"] if direction == "OUT" else trip["ret"]
+    by_ts = {}
+    for r in rows:
+        origin = r.get("origin") or default_origin
+        if origin != trip["origin"] or r.get("destination") != trip["destination"]:
+            continue
+        if r["direction"] != direction or r["flight_date"] != flight_date:
+            continue
+        ts, price = r["observed_at"], r["price"]
+        if ts not in by_ts or price < by_ts[ts]:
+            by_ts[ts] = price
+    return [{"observed_at": ts, "price": by_ts[ts]} for ts in sorted(by_ts)]
+
+
 def cheapest_roundtrip_over_time(rows, min_nights=0, max_nights=None):
     by_ts = defaultdict(list)
     for r in rows:
