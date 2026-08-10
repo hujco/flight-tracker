@@ -384,12 +384,20 @@ def _primary_hero_html(rows):
                     f"{_origin_from(t['origin'])} · {_fmt_date(t['ret'])}")
         sub = (f"{info['nights']} nocí · odlet {_fmt_date(t['out'])} už kúpený "
                f"za {paid:.0f} €/os")
-        # Spolu = zaplatený odlet + aktuálny návrat, aby bolo vidno reálnu sumu
-        legs_html = (f"<div class='hero-legs'>Odlet {_fmt_date(t['out'])}: "
-                     f"<b>✓ kúpené {paid:.0f} €</b>"
-                     f"&nbsp;·&nbsp; Spolu za osobu by vyšlo <b>{paid + pp:.0f} €</b>"
-                     f"&nbsp;·&nbsp; {_DEFAULT_PERSONS} os.: "
-                     f"<b>{(paid + pp) * _DEFAULT_PERSONS:.0f} €</b></div>")
+        # Reálna suma, nie len letenky: doplnky (batožina, fasttrack, miestenky)
+        # zaplatíme na návrat znova, a práve tie robia rozdiel voči referencii.
+        extras = getattr(config, "EXTRAS_PER_PERSON_PER_LEG_EUR", 0.0)
+        n = _DEFAULT_PERSONS
+        paid_total = getattr(config, "OUT_LEG_PAID_TOTAL_EUR", paid * n)
+        ret_all_in = (pp + extras) * n
+        legs_html = (
+            f"<div class='hero-legs'>Odlet {_fmt_date(t['out'])}: "
+            f"<b>✓ zaplatené {paid_total:.0f} €</b> ({n} os., s doplnkami)"
+            f"&nbsp;·&nbsp; letenka {paid:.0f} €/os</div>"
+            f"<div class='hero-legs'>Návrat s doplnkami by vyšiel "
+            f"<b>{ret_all_in:.0f} €</b> · celá cesta "
+            f"<b>{paid_total + ret_all_in:.0f} €</b>"
+            f" (pred 2 r. {config.REFERENCE_PRICE_EUR:.0f} €)</div>")
     else:
         eyebrow = "Náš let"
         headline = (f"Z {_origin_from(t['origin'])} do {_dest_to(t['destination'])}"

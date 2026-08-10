@@ -72,13 +72,19 @@ ALERT_LEG_WINDOW_DAYS = 10
 # súčet oboch nôh by miešal cenu, ktorú nemôžeme ovplyvniť, s tou, ktorú áno.
 # Hero, verdikt aj alerty preto bežia nad samotným návratom.
 OUT_LEG_BOUGHT = True
-# Cena/os, ktorú sme za odlet reálne zaplatili. ODHAD z poslednej sledovanej
-# ceny (42,99 € držalo od 3. 8.) — ak sme zaplatili inak, prepíš tu.
-OUT_LEG_PAID_EUR = 42.99
 
-# Cieľ pre samotný návrat. Odvodený tak, aby zodpovedal pôvodnému cieľu za celý
-# let: ALERT_TARGET_EUR (180) − zaplatený odlet ≈ 137 €. Nie je to mŕtve číslo:
-# za posledné 2 týždne bol návrat na 130,87 €, teda pod ním.
+# Čo sme za odlet reálne zaplatili. Banka stiahla 151 € za 2 osoby (to je presné);
+# rozpis bol ~105 $ letenky a ~171 $ spolu, teda kurz 151/171 = 0.883:
+#   letenky  105 $ -> 92.72 €  za 2 os. = 46.36 €/os
+#   doplnky   66 $ -> 58.28 €  za 2 os. = 29.14 €/os (batožina + fasttrack + miestenky)
+# Sledované ceny sú holé letenky, preto sa všade porovnáva 46.36, nie 75.50.
+OUT_LEG_PAID_TOTAL_EUR = 151.0        # celá platba za booking (2 os., všetko)
+OUT_LEG_PAID_EUR = 46.36              # z toho samotná letenka, na osobu
+# Doplnky na osobu a nohu — na návrat ich zaplatíme znova (rovnaký rozsah).
+EXTRAS_PER_PERSON_PER_LEG_EUR = 29.14
+
+# Cieľ pre samotný návrat: ALERT_TARGET_EUR (180 za obe letenky/os) − zaplatený
+# odlet. Nie je to mŕtve číslo — návrat bol pred 2 týždňami na 130,87 €.
 ALERT_TARGET_RET_EUR = round(ALERT_TARGET_EUR - OUT_LEG_PAID_EUR, 2)
 REPORT_URL = "https://hujco.github.io/flight-tracker/"
 # chat id nie je tajné (bez tokenu sa s ním nedá nič) → môže byť tu; token ostáva v Secrets

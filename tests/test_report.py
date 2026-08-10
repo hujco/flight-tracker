@@ -142,9 +142,11 @@ def test_hero_flat_price_no_seat_warning():
 
 # --- rezim "odlet uz je kupeny" ----------------------------------------------
 
-def _bought(monkeypatch, paid=43.0):
+def _bought(monkeypatch, paid=43.0, paid_total=100.0, extras=29.14):
     monkeypatch.setattr(config, "OUT_LEG_BOUGHT", True)
     monkeypatch.setattr(config, "OUT_LEG_PAID_EUR", paid)
+    monkeypatch.setattr(config, "OUT_LEG_PAID_TOTAL_EUR", paid_total)
+    monkeypatch.setattr(config, "EXTRAS_PER_PERSON_PER_LEG_EUR", extras)
 
 
 def test_hero_headlines_return_when_outbound_bought(monkeypatch):
@@ -155,15 +157,18 @@ def test_hero_headlines_return_when_outbound_bought(monkeypatch):
     assert "<div class='hero-price'>166 €" in html
     assert "<div class='hero-price'>209 €" not in html
     assert "Ostáva kúpiť návrat" in html
-    assert "už kúpený" in html and "✓ kúpené 43 €" in html
+    assert "už kúpený" in html and "✓ zaplatené" in html
 
 
-def test_hero_shows_real_total_including_paid_leg(monkeypatch):
-    _bought(monkeypatch, paid=43.0)
-    rows = _at("2026-08-01T06:00", 50.0, 130.0) + _at("2026-08-10T06:00", 43.0, 166.0)
+def test_hero_shows_what_was_really_paid_not_just_fares(monkeypatch):
+    _bought(monkeypatch, paid=46.36, paid_total=151.0, extras=29.14)
+    rows = _at("2026-08-01T06:00", 50.0, 130.0) + _at("2026-08-10T06:00", 46.0, 166.0)
     html = report.build_report_html(rows)
-    # 43 zaplatene + 166 navrat = 209 za osobu, 418 za dve
-    assert "209 €" in html and "418 €" in html
+    assert "✓ zaplatené 151 €" in html          # skutocna platba, nie len letenky
+    assert "letenka 46 €/os" in html
+    # navrat s doplnkami: (166.08 + 29.14) * 2 = 390; cela cesta 151 + 390 = 541
+    assert "390 €" in html and "541 €" in html
+    assert "pred 2 r. 301 €" in html            # porovnanie apples-to-apples
 
 
 def test_verdict_uses_return_series_when_outbound_bought(monkeypatch):
