@@ -113,7 +113,7 @@ def test_hero_shows_lowest_above_current():
 def test_hero_flat_price_is_not_a_buy_signal():
     older = [dict(r, observed_at="2026-06-29T14:00") for r in _BUD_PRIMARY]
     html = report.build_report_html(older + _BUD_PRIMARY)
-    assert "Cena sa zatiaľ nehla" in html and "2 meraní" in html
+    assert "Cena sa zatiaľ nehla" in html and "2 merania" in html   # sk. plural
     assert "class='hero-low hero-low-hit'" not in html   # markup, nie CSS pravidlo
 
 
@@ -217,3 +217,71 @@ def test_write_report_creates_file(tmp_path):
     out = tmp_path / "report.html"
     report.write_report(_BUD_PRIMARY, out)
     assert out.exists() and "Lefkada" in out.read_text(encoding="utf-8")
+
+
+# --- dva mozne navraty (13.9. vs 15.9.) --------------------------------------
+
+_OPT_13 = {"origin": "BUD", "destination": "PVK", "out": "2026-09-06", "ret": "2026-09-13"}
+_OPT_15 = {"origin": "BUD", "destination": "PVK", "out": "2026-09-06", "ret": "2026-09-15"}
+
+
+def _two_options(monkeypatch):
+    monkeypatch.setattr(config, "RETURN_OPTIONS", [_OPT_13, _OPT_15])
+
+
+def _both(ts, out_p, ret13, ret15=None):
+    rows = [dict(_BUD_PRIMARY[0], observed_at=ts, price=out_p),
+            dict(_BUD_PRIMARY[1], observed_at=ts, price=ret13)]
+    if ret15 is not None:
+        rows.append(dict(_BUD_PRIMARY[1], observed_at=ts,
+                         flight_date="2026-09-15", price=ret15))
+    return rows
+
+
+def test_hero_headlines_the_cheaper_return(monkeypatch):
+    _two_options(monkeypatch)
+    _bought(monkeypatch, paid=46.36, paid_total=151.0, extras=29.14)
+    rows = (_both("2026-08-13T06:00", 46.0, 160.0, 130.0)
+            + _both("2026-08-15T06:00", 46.0, 179.0, 101.0))
+    html = report.build_report_html(rows)
+    assert "<div class='hero-price'>101 €" in html      # lacnejsi navrat je hlavna cena
+    assert "15.09.2026" in html
+
+
+def test_report_compares_both_return_options(monkeypatch):
+    # Rozhodujeme sa MEDZI terminmi -> oba musia byt na stranke aj s rozdielom
+    _two_options(monkeypatch)
+    _bought(monkeypatch, paid=46.36, paid_total=151.0, extras=29.14)
+    rows = (_both("2026-08-13T06:00", 46.0, 160.0, 130.0)
+            + _both("2026-08-15T06:00", 46.0, 179.0, 101.0))
+    html = report.build_report_html(rows)
+    assert "class='opt-grid'" in html   # markup, nie CSS pravidlo
+    assert "13.09.2026" in html and "179 €" in html
+    assert "7 nocí" in html and "9 nocí" in html
+    # rozdiel 78 €/os = 156 € za 2 osoby — tam sa rozhoduje
+    assert "156 €" in html
+
+
+def test_comparison_absent_with_single_option():
+    # kym bol jediny termin, porovnanie nema co ukazovat
+    html = report.build_report_html(_BUD_PRIMARY)
+    assert "class='opt-grid'" not in html   # markup, nie CSS pravidlo
+
+
+def test_fresh_option_says_it_has_no_history_yet(monkeypatch):
+    # 15.9. ma jedine meranie -> percentil ani trend nedavaju zmysel,
+    # ale mlcat sa neda: stranka by vyzerala ako by verdikt chybal omylom
+    _two_options(monkeypatch)
+    _bought(monkeypatch, paid=46.36, paid_total=151.0, extras=29.14)
+    rows = (_both("2026-08-13T06:00", 46.0, 160.0)
+            + _both("2026-08-15T06:00", 46.0, 179.0, 101.0))
+    html = report.build_report_html(rows)
+    assert "percentil" not in html
+    assert "Zbieram históriu" in html and "1 meranie" in html
+
+
+def test_header_does_not_claim_a_single_return_date(monkeypatch):
+    _two_options(monkeypatch)
+    rows = _both("2026-08-15T06:00", 46.0, 179.0, 101.0)
+    html = report.build_report_html(rows)
+    assert "6.–13.9.2026" not in html

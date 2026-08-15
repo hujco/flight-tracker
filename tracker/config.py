@@ -134,15 +134,30 @@ BUD_DESTINATIONS = [
     # Ak pribudne, stačí odkomentovať:
     # {"code": "EFL", "label": "Kefalonia"},
 ]
-# Každý trip = presný odlet + presný návrat. Pridať/odobrať = jeden riadok.
-# Sledujeme LEN náš termín — žiadne alternatívne dátumy (nechceme falošné signály).
-BUD_TRIPS = [
-    {"out": "2026-09-06", "ret": "2026-09-13"},   # 7 nocí — náš let
+# O NÁVRATE SA EŠTE ROZHODUJEME. Odlet 6.9. je kúpený a pre obe možnosti rovnaký,
+# takže voľba je čisto „ktorý návrat kúpime". PVK→BUD lieta v nedeľu a v utorok,
+# preto „o dva dni neskôr" znamená utorok 15.9. (14. ani 16.9. spoj neexistuje).
+#
+# Dva dni navyše na Lefkade nie sú náklad navyše: do Budapešti ideme až v deň
+# odletu, takže odpadne tamojšie ubytovanie. Kým ubytovanie na Lefkade nepotvrdí
+# cenu predĺženia, porovnávame holé letenky — pridať náklad za noc navyše by
+# znamenalo hádať číslo a tváriť sa, že ho vieme.
+#
+# Každá možnosť má VLASTNÚ históriu a vlastné signály. Zámerne sa nezlievajú do
+# jednej „najlacnejšej" série: 15.9. začína bez histórie, takže spoločná séria by
+# skok zo 179 na 101 € čítala ako prepad ceny, hoci je to iný let.
+RETURN_OPTIONS = [
+    {"origin": "BUD", "destination": "PVK", "out": "2026-09-06", "ret": "2026-09-13"},
+    {"origin": "BUD", "destination": "PVK", "out": "2026-09-06", "ret": "2026-09-15"},
 ]
 
-# Náš hlavný let: zvýrazní sa navrchu reportu (fixný termín, ktorý reálne riešime).
-PRIMARY_TRIP = {"origin": "BUD", "destination": "PVK",
-                "out": "2026-09-06", "ret": "2026-09-13"}
+# Náš hlavný let: fallback pre miesta, kde treba jediný termín (spätná kompatibilita).
+# Rozhodovanie beží nad RETURN_OPTIONS — rozhoduje ten, ktorý je práve lacnejší.
+PRIMARY_TRIP = RETURN_OPTIONS[0]
+
+# Čo sa reálne zbiera. Odvodené z RETURN_OPTIONS, nech je zdroj pravdy jeden:
+# pridanie termínu vyššie automaticky pridá jeho deň do zberu.
+BUD_TRIPS = [{"out": t["out"], "ret": t["ret"]} for t in RETURN_OPTIONS]
 
 
 def _trip_nights(trip):

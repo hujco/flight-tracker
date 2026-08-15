@@ -90,6 +90,15 @@ def total_with_extras(base_total, persons, extras):
     return round(base_total * persons + extras, 2)
 
 
+def measurements_label(n):
+    """1 meranie / 2 merania / 5 meraní — číslo v zlom tvare zdržuje pri čítaní."""
+    if n == 1:
+        return "1 meranie"
+    if 2 <= n <= 4:
+        return f"{n} merania"
+    return f"{n} meraní"
+
+
 def latest_observed_at(rows):
     return max((r["observed_at"] for r in rows), default=None)
 
@@ -209,6 +218,28 @@ def decision_series(rows, trip, default_origin=None, out_bought=False):
         return [{"observed_at": x["observed_at"], "total": x["price"]}
                 for x in leg_over_time(rows, trip, "RET", default_origin)]
     return primary_trip_over_time(rows, trip, default_origin)
+
+
+def option_series(rows, options, default_origin=None, out_bought=False):
+    """Rozhodovacia séria pre KAŽDÝ zvažovaný termín, od najlacnejšieho.
+
+    Termíny sa zámerne nezlievajú do jednej „najlacnejšej" série: nový dátum
+    začína bez histórie, takže spoločná séria by rozdiel medzi dvoma rôznymi
+    letmi (179 → 101 €) čítala ako prepad ceny. Každý termín má vlastnú históriu.
+
+    Termín bez dát vypadne — objaví sa až keď ho zber prvýkrát chytí.
+    Návrat: [{trip, series, price, observed_at}, ...] zoradené od najlacnejšieho.
+    """
+    snaps = []
+    for trip in options:
+        series = decision_series(rows, trip, default_origin, out_bought)
+        if not series:
+            continue
+        snaps.append({"trip": trip, "series": series,
+                      "price": series[-1]["total"],
+                      "observed_at": series[-1]["observed_at"]})
+    snaps.sort(key=lambda s: s["price"])
+    return snaps
 
 
 def cheapest_roundtrip_over_time(rows, min_nights=0, max_nights=None):

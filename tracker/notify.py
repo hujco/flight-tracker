@@ -75,10 +75,19 @@ def detect_primary_trip_low(rows, trip, target, default_origin=None):
     }
 
 
+def _nights(trip):
+    return (date.fromisoformat(trip["ret"]) - date.fromisoformat(trip["out"])).days
+
+
 def _combo(trip):
-    nights = (date.fromisoformat(trip["ret"]) - date.fromisoformat(trip["out"])).days
+    nights = _nights(trip)
     return {"out_date": trip["out"], "ret_date": trip["ret"],
             "nights": nights, "label": f"{nights} nocí"}
+
+
+def return_options():
+    """Termíny, medzi ktorými sa ešte rozhodujeme (odlet je pre všetky rovnaký)."""
+    return list(getattr(config, "RETURN_OPTIONS", None) or [config.PRIMARY_TRIP])
 
 
 def detect_target(series, target):
@@ -214,6 +223,45 @@ def detect_signals(rows, trip, target=None, default_origin=None, today=None):
     return [{**s, "combo": combo, "days_left": days_left} for s in found if s]
 
 
+def option_snapshots(rows, options=None, target=None, default_origin=None, today=None):
+    """Stav každého zvažovaného návratu, zoradený od najlacnejšieho.
+
+    Každý termín má VLASTNÚ sériu aj vlastné signály. Zlúčiť ich do jednej
+    „najlacnejšej" série by z rozdielu medzi dvoma rôznymi letmi urobilo cenový
+    pohyb — pri termíne bez histórie by prvé meranie vyzeralo ako prepad ceny.
+
+    Termín bez dát vypadne: nový dátum sa objaví až keď ho zber prvýkrát chytí.
+    """
+    options = options if options is not None else return_options()
+    target = target if target is not None else effective_target()
+    default_origin = default_origin if default_origin is not None else config.ORIGIN
+    out_bought = getattr(config, "OUT_LEG_BOUGHT", False)
+    snaps = stats.option_series(rows, options, default_origin, out_bought)
+    return [{**s, "signals": detect_signals(rows, s["trip"], target,
+                                            default_origin, today)}
+            for s in snaps]
+
+
+# Poradie naprieč termínmi: najprv urgentnosť signálu, až potom „ktorý je lacnejší".
+# Inak by „príležitosť" na lacnejšom termíne predbehla „kupuj" na tom druhom —
+# a práve „kupuj" je jediný signál, ktorý pýta okamžitú akciu.
+_KIND_PRIORITY = ("target", "window_low", "ret_low", "out_low", "spike")
+
+
+def _signal_rank(kind):
+    return _KIND_PRIORITY.index(kind) if kind in _KIND_PRIORITY else len(_KIND_PRIORITY)
+
+
+def _alt_info(snaps, index):
+    """Najlepšia z ostatných možností — bez nej je cena jedného termínu bezcenná."""
+    others = [s for i, s in enumerate(snaps) if i != index]
+    if not others:
+        return None
+    best = others[0]        # snaps sú zoradené od najlacnejšieho
+    return {"ret": best["trip"]["ret"], "price": best["price"],
+            "nights": _nights(best["trip"])}
+
+
 def detect_new_low(rows, presets, target):
     """Vráti info o novom minime pod cieľom, alebo None.
 
@@ -252,6 +300,7 @@ def _format_leg_low(info, destination_label, origin_code, report_url):
         f"Predtým v okne najmenej: {info['prev_low']:.0f} € · "
         f"historické minimum {info['all_min']:.0f} €",
     ]
+    lines += _alt_lines(info)
     if info.get("pct") is not None:
         lines.append(f"Lacnejšie než {100 - info['pct']:.0f} % histórie tejto nohy")
     days_left = info.get("days_left")
@@ -284,25 +333,75 @@ def all_in_lines(fare_per_person):
     ]
 
 
+def _alt_line(ret, nights, alt_price, price):
+    """Druhá možnosť v jednom riadku — rozhodujeme sa MEDZI termínmi.
+
+    Bez nej správa hovorí „101 € je dobrá cena", ale zamlčí, že druhý termín je
+    o 78 €/os inde. Rozdiel preto uvádzame aj za celú partiu — tam sa rozhoduje.
+    """
+    diff = alt_price - price
+    line = (f"Druhá možnosť — návrat {_fmt_date(ret)} ({nights} nocí): "
+            f"<b>{alt_price:.0f} €/os</b>")
+    if abs(diff) >= 0.5:
+        word = "drahší" if diff > 0 else "lacnejší"
+        line += (f" · o {abs(diff):.0f} €/os {word} "
+                 f"({abs(diff) * config.PERSONS:.0f} € za {config.PERSONS} os.)")
+    return line
+
+
+def _alt_lines(info):
+    alt = info.get("alt")
+    if not alt:
+        return []
+    return [_alt_line(alt["ret"], alt["nights"], alt["price"], info["price"])]
+
+
+def build_digest_multi(snaps, today=None):
+    """Jeden súhrn za všetky zvažované termíny; hlavný je ten práve lacnejší.
+
+    Zámerne nie správa na termín: rozhodujeme sa medzi nimi, takže patria vedľa
+    seba — rozdiel má byť vidieť bez prepínania medzi správami.
+    """
+    pairs = [(s, build_digest(s["series"], s["trip"], today)) for s in snaps]
+    pairs = [(s, i) for s, i in pairs if i]
+    if not pairs:
+        return None
+    main_snap, main = pairs[0]
+    alts = [{"ret": s["trip"]["ret"], "nights": _nights(s["trip"]), "price": i["price"]}
+            for s, i in pairs[1:]]
+    return {**main, "trip": main_snap["trip"], "alts": alts}
+
+
 def _format_digest(info, destination_label, origin_code, target, report_url):
     c = info["combo"]
     price = info["price"]
     pct = info.get("pct")
+    measurements = info.get("measurements", 0)
     lines = [
         f"<b>📊 Denný súhrn — {origin_code}↔{destination_label}</b>",
         f"{_fmt_date(c['out_date'])} → {_fmt_date(c['ret_date'])} · {c['nights']} nocí",
         f"Teraz: <b>{price:.0f} €/os</b> "
         f"(spolu {config.PERSONS} os.: {price * config.PERSONS:.0f} €)",
-        f"Za 7 dní: {info['week_min']:.0f} – {info['week_max']:.0f} €/os",
     ]
-    if info.get("change_24h") is not None:
-        arrow = "▲" if info["change_24h"] > 0 else ("▼" if info["change_24h"] < 0 else "▬")
-        lines.append(f"Za 24 h: {arrow} {info['change_24h']:+.1f} %")
-    if pct is not None:
-        # 0 % = najlacnejšie, čo sme videli; 100 % = najdrahšie
-        verdict = "drahšie" if pct >= 50 else "lacnejšie"
-        lines.append(f"Je to {verdict} než {pct:.0f} % z {info['measurements']} meraní "
-                     f"(minimum {info['all_min']:.0f} €)")
+    if measurements < 2:
+        # „lacnejšie než 0 % z 1 merania" a „za 7 dní 101 – 101" nie sú čísla,
+        # ale šum: nový termín históriu ešte nemá a treba to povedať rovno.
+        lines.append(f"Zbieram históriu ({stats.measurements_label(measurements)}) — "
+                     f"porovnanie voči histórii príde po ďalších behoch")
+    else:
+        lines.append(f"Za 7 dní: {info['week_min']:.0f} – {info['week_max']:.0f} €/os")
+        if info.get("change_24h") is not None:
+            arrow = ("▲" if info["change_24h"] > 0
+                     else ("▼" if info["change_24h"] < 0 else "▬"))
+            lines.append(f"Za 24 h: {arrow} {info['change_24h']:+.1f} %")
+        if pct is not None:
+            # 0 % = najlacnejšie, čo sme videli; 100 % = najdrahšie
+            verdict = "drahšie" if pct >= 50 else "lacnejšie"
+            lines.append(f"Je to {verdict} než {pct:.0f} % z "
+                         f"{stats.measurements_label(measurements)} "
+                         f"(minimum {info['all_min']:.0f} €)")
+    for a in info.get("alts", []):
+        lines.append(_alt_line(a["ret"], a["nights"], a["price"], price))
     lines += all_in_lines(price)
     lines.append(f"Cieľ: ≤ {target:.0f} €/os")
     days_left = info.get("days_left")
@@ -333,6 +432,7 @@ def format_message(info, destination_label, origin_code, reference_per_person, t
         f"Letenka {origin_code}↔{destination_label}: <b>{price:.0f} €/os</b> ({c['label']})",
         f"{_fmt_date(c['out_date'])} → {_fmt_date(c['ret_date'])} · {c['nights']} nocí",
     ]
+    lines += _alt_lines(info)
     if kind == "spike":
         lines.append(f"Za {info.get('window_hours')} h +{info.get('change_pct')} % "
                      f"(z {info['prev_low']:.0f} €/os)")
@@ -365,9 +465,19 @@ def send_telegram(token, chat_id, text, session=None):
     return resp.json()
 
 
-def _on_cooldown(conn, kind, now_iso):
+def _cooldown_key(kind, trip):
+    """Cooldown je per termín: alert na 15.9. nesmie umlčať alert na 13.9.
+
+    Sú to nezávislé nákupy — kúpiť sa dá len jeden z nich, ale kým je rozhodnutie
+    otvorené, musíme vidieť pohyb na oboch.
+    """
+    return f"{kind}@{trip['ret']}" if trip else kind
+
+
+def _on_cooldown(conn, kind, now_iso, key=None):
     """Rovnaký druh signálu sa neopakuje skôr než po ALERT_COOLDOWN_HOURS.
 
+    `kind` určuje dĺžku cooldownu, `key` to, čoho sa týka (druh + termín).
     Stav je v tabuľke `alerts` — bez conn (napr. v testoch) cooldown neplatí.
     """
     if conn is None:
@@ -375,7 +485,7 @@ def _on_cooldown(conn, kind, now_iso):
     hours = config.ALERT_COOLDOWN_HOURS.get(kind)
     if not hours:
         return False
-    last = db.last_alert(conn, kind)
+    last = db.last_alert(conn, key or kind)
     if not last:
         return False
     prev = stats.parse_ts(last["sent_at"])      # normalizuje naivné aj aware tvary
@@ -419,7 +529,7 @@ def _heartbeat_due(conn, now_iso):
     return (now - prev) >= timedelta(hours=config.HEARTBEAT_HOURS)
 
 
-def _due_digest(rows, trip, conn, now_iso):
+def _due_digest(snaps, conn, now_iso):
     """Ranný súhrn, prípadne heartbeat, keď ranný beh vypadol.
 
     Bez conn sa stav nedá sledovať, tak sa neposiela vôbec — inak by každý beh
@@ -429,47 +539,60 @@ def _due_digest(rows, trip, conn, now_iso):
         return None
     if not (_morning_due(conn, now_iso) or _heartbeat_due(conn, now_iso)):
         return None
-    series = stats.decision_series(rows, trip, config.ORIGIN,
-                                   getattr(config, "OUT_LEG_BOUGHT", False))
-    return build_digest(series, trip)
+    return build_digest_multi(snaps)
 
 
 def maybe_notify(rows, session=None, conn=None, now=None):
-    """Alert LEN pre náš let (config.PRIMARY_TRIP) → Telegram.
+    """Alert LEN pre termíny, o ktorých sa rozhodujeme (config.RETURN_OPTIONS) → Telegram.
 
-    Sledujeme jediný fixný termín, takže upozorňujeme výhradne naň — nikdy nie na
-    lacný iný dátum (to bola presne tá mätúca vec, ktorú nechceme).
+    Nikdy nie lacný iný dátum z mesačného skenu — to bola presne tá mätúca vec,
+    ktorú nechceme. Sledované termíny sú ale dva (návrat 13.9. alebo 15.9.),
+    takže signály sa počítajú pre každý zvlášť a **slovo dostane prvý ten
+    lacnejší** — o ňom sa reálne rozhoduje.
 
     Signálov je viac (target / window_low / spike) a sú nezávislé; pošle sa prvý,
     ktorý prejde cooldownom, aby jedno meranie nikdy neposlalo dve správy.
     """
     token = os.environ.get("TELEGRAM_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID") or config.TELEGRAM_CHAT_ID
-    trip = config.PRIMARY_TRIP
     now_iso = now or datetime.now(timezone.utc).isoformat(timespec="minutes")
-    signals = detect_signals(rows, trip, effective_target(), config.ORIGIN)
+    snaps = option_snapshots(rows)
+    trip = snaps[0]["trip"] if snaps else config.PRIMARY_TRIP
     dest_label = _dest_label(trip["destination"])
     tag = f"{trip['origin']}↔{dest_label}"
-    info = next((s for s in signals if not _on_cooldown(conn, s["kind"], now_iso)), None)
+
+    candidates = []
+    for i, snap in enumerate(snaps):
+        alt = _alt_info(snaps, i)
+        for sig in snap["signals"]:
+            candidates.append({**sig, "trip": snap["trip"], "alt": alt,
+                               "key": _cooldown_key(sig["kind"], snap["trip"]),
+                               "rank": (_signal_rank(sig["kind"]), i)})
+    candidates.sort(key=lambda c: c["rank"])
+    info = next((c for c in candidates
+                 if not _on_cooldown(conn, c["kind"], now_iso, c["key"])), None)
     if info is None:
         # Nič nevystrelilo (alebo je všetko v cooldowne) → keď už dlho neprišlo nič,
         # pošli aspoň súhrn. Ticho sa inak nedá odlíšiť od poruchy.
-        info = _due_digest(rows, trip, conn, now_iso)
+        info = _due_digest(snaps, conn, now_iso)
     if info is None:
-        if not signals:
+        if not candidates:
             return False, "žiadny aktívny signál"
-        kinds = ", ".join(s["kind"] for s in signals)
+        kinds = ", ".join(c["key"] for c in candidates)
         return False, f"{tag}: signály ({kinds}) v cooldowne"
+    trip = info.get("trip", trip)
+    dest_label = _dest_label(trip["destination"])
+    key = info.get("key", info["kind"])
     if not token or not chat_id:
-        return False, (f"{tag}: signál {info['kind']} @ {info['price']:.0f} €, "
+        return False, (f"{tag}: signál {key} @ {info['price']:.0f} €, "
                        "ale chýba TELEGRAM_TOKEN")
     text = format_message(info, dest_label, trip["origin"],
                           config.REFERENCE_PER_PERSON_EUR,
                           effective_target(), config.REPORT_URL)
     send_telegram(token, chat_id, text, session=session)
     if conn is not None:
-        db.record_alert(conn, now_iso, info["kind"], info["price"], info["observed_at"])
-    return True, f"{tag}: poslaný alert {info['kind']} {info['price']:.0f} €/os"
+        db.record_alert(conn, now_iso, key, info["price"], info["observed_at"])
+    return True, f"{tag}: poslaný alert {key} {info['price']:.0f} €/os"
 
 
 def send_test(session=None):

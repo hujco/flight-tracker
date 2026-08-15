@@ -189,6 +189,24 @@ h1 { font-size: clamp(22px, 6vw, 30px); font-weight: 700; margin: 6px 0 4px;
 .vstat-value { font-family: 'Fira Code', monospace; font-size: 16px; font-weight: 600;
   color: #F8FAFC; overflow-wrap: anywhere; }
 .vstat-sub { color: #94A3B8; font-size: 11px; overflow-wrap: anywhere; }
+.verdict-fresh { background: rgba(96,165,250,0.14); color: #93C5FD;
+  border: 1px solid rgba(96,165,250,0.35); }
+
+/* Porovnanie zvažovaných návratov — auto-fit, nech sa na mobile zalomí pod seba */
+.opt-label { color: #94A3B8; font-size: 11px; letter-spacing: .06em;
+  text-transform: uppercase; margin: 14px 0 8px; }
+.opt-grid { display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.opt { background: rgba(15,23,42,0.45); border: 1px solid rgba(148,163,184,0.14);
+  border-radius: 12px; padding: 10px 12px; }
+.opt-best { border-color: rgba(74,222,128,0.45); background: rgba(74,222,128,0.08); }
+.opt-head { color: #CBD5E1; font-size: 12px; overflow-wrap: anywhere; }
+.opt-price { font-family: 'Fira Code', monospace; font-size: 22px; font-weight: 600;
+  color: #F8FAFC; margin: 2px 0; }
+.opt-sub { color: #94A3B8; font-size: 11px; overflow-wrap: anywhere; }
+.opt-note { margin-top: 6px; font-size: 11px; overflow-wrap: anywhere; }
+.opt-tag { color: #4ADE80; font-weight: 600; }
+.opt-diff { color: #FBBF24; font-family: 'Fira Code', monospace; }
 
 /* Počítadlo osôb */
 .pp-wrap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -252,40 +270,75 @@ def _out_bought():
     return getattr(config, "OUT_LEG_BOUGHT", False)
 
 
-def _primary_trip_series(rows):
-    """Séria, o ktorej sa ešte rozhodujeme (súčet, alebo len návrat po kúpe odletu)."""
-    return stats.decision_series(rows, config.PRIMARY_TRIP, config.ORIGIN,
-                                 _out_bought())
+def _return_options():
+    """Termíny, medzi ktorými sa ešte rozhodujeme (odlet je pre všetky rovnaký)."""
+    return list(getattr(config, "RETURN_OPTIONS", None) or [config.PRIMARY_TRIP])
 
 
-def _primary_trip_now(rows):
-    """Aktuálny stav toho, o čom sa rozhodujeme + ceny oboch nôh na kontext."""
-    series = _primary_trip_series(rows)
-    if not series:
-        return None
-    t = config.PRIMARY_TRIP
-    nights = (date.fromisoformat(t["ret"]) - date.fromisoformat(t["out"])).days
-    legs = stats.primary_trip_over_time(rows, t, config.ORIGIN)
-    info = {**series[-1], "nights": nights, "low": min(s["total"] for s in series)}
+def _decision_options(rows):
+    """Zvažované termíny s dátami, od najlacnejšieho. Hlavný je ten prvý."""
+    return stats.option_series(rows, _return_options(), config.ORIGIN, _out_bought())
+
+
+def _nights(trip):
+    return (date.fromisoformat(trip["ret"]) - date.fromisoformat(trip["out"])).days
+
+
+_WEEKDAYS_SK = ("po", "ut", "st", "št", "pi", "so", "ne")
+
+
+def _weekday(iso):
+    return _WEEKDAYS_SK[date.fromisoformat(iso).weekday()]
+
+
+_measurements = stats.measurements_label
+
+
+def _all_in_total(fare_per_person, persons=None):
+    """Čo za návrat reálne zaplatíme: letenka + doplnky, krát počet osôb."""
+    persons = persons if persons is not None else _DEFAULT_PERSONS
+    extras = getattr(config, "EXTRAS_PER_PERSON_PER_LEG_EUR", 0.0)
+    return (fare_per_person + extras) * persons
+
+
+def _trip_now(rows, trip, series):
+    """Aktuálny stav daného termínu + ceny oboch nôh na kontext."""
+    legs = stats.primary_trip_over_time(rows, trip, config.ORIGIN)
+    info = {**series[-1], "nights": _nights(trip),
+            "low": min(s["total"] for s in series)}
     if legs:                       # ceny nôh sú stále sledované, aj tá kúpená
         info.setdefault("out_price", legs[-1]["out_price"])
         info.setdefault("ret_price", legs[-1]["ret_price"])
     return info
 
 
-def _primary_trip_fig(series):
-    """Vývoj ceny nášho termínu — samostatný graf, aby hero nepotreboval nič nižšie."""
-    # os X tiež v našom čase — inak graf tvrdí niečo iné než hlavička nad ním
-    # (a miešanie naivných a +00:00 reťazcov si Plotly vykladá nekonzistentne)
-    xs = [_to_local(s["observed_at"]).replace(tzinfo=None).isoformat() for s in series]
-    ys = [s["total"] for s in series]
-    fig = go.Figure(go.Scatter(
-        x=xs, y=ys, mode="lines+markers", name="Náš termín",
-        line=dict(color=_AMBER, width=3), marker=dict(color=_AMBER, size=7),
-        fill="tozeroy", fillcolor="rgba(245,158,11,0.10)"))
+def _options_fig(snaps):
+    """Vývoj ceny každého zvažovaného termínu — jedna čiara na termín.
+
+    Hlavný (práve lacnejší) je amber a vyplnený, ostatné modré: rozdiel medzi
+    nimi je celé rozhodnutie, takže musia byť v jednom grafe pod sebou.
+    """
+    fig = go.Figure()
+    for i, snap in enumerate(snaps):
+        # os X tiež v našom čase — inak graf tvrdí niečo iné než hlavička nad ním
+        # (a miešanie naivných a +00:00 reťazcov si Plotly vykladá nekonzistentne)
+        xs = [_to_local(s["observed_at"]).replace(tzinfo=None).isoformat()
+              for s in snap["series"]]
+        ys = [s["total"] for s in snap["series"]]
+        main = i == 0
+        color = _AMBER if main else _COLORWAY[0]
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="lines+markers",
+            name=f"návrat {_fmt_date(snap['trip']['ret'])}",
+            line=dict(color=color, width=3 if main else 2),
+            marker=dict(color=color, size=7 if main else 5),
+            fill="tozeroy" if main else None,
+            fillcolor="rgba(245,158,11,0.10)"))
     fig = _style(fig)
-    fig.update_layout(showlegend=False, margin=dict(l=55, r=20, t=20, b=45))
-    if xs:
+    fig.update_layout(showlegend=len(snaps) > 1, margin=dict(l=55, r=20, t=20, b=45),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.0,
+                                  xanchor="left", x=0))
+    if snaps and snaps[0]["series"]:
         fig.add_hline(
             y=config.REFERENCE_PER_PERSON_EUR, line_dash="dash", line_color="#94A3B8",
             annotation_text=f"pred 2 r.: ~{config.REFERENCE_PER_PERSON_EUR:.0f} €",
@@ -293,14 +346,19 @@ def _primary_trip_fig(series):
     return fig
 
 
-def _verdict_html(series, price):
+def _verdict_html(series, price, trip=None):
     """Čísla, podľa ktorých sa dá rozhodnúť „kúpiť alebo čakať".
 
     Holá cena nestačí — bez percentilu a trendu používateľ nevie, či je 222 €
     dobré alebo zlé. Rovnaké čísla posiela aj denný Telegram súhrn.
+
+    Nový termín históriu ešte nemá; vtedy to treba povedať nahlas, inak vyzerá
+    prázdne miesto ako chyba stránky.
     """
+    trip = trip or config.PRIMARY_TRIP
     if len(series) < 2:
-        return ""
+        return (f"<div class='verdict verdict-fresh'>Zbieram históriu "
+                f"({_measurements(len(series))})</div>") if series else ""
     values = [s["total"] for s in series]
     pct = stats.percentile_of(values, price)
     week = [s["total"] for s in stats.window_series(series, 7)]
@@ -308,7 +366,7 @@ def _verdict_html(series, price):
     change = None
     if len(day) > 1 and day[0]["total"]:
         change = 100.0 * (price - day[0]["total"]) / day[0]["total"]
-    days_left = stats.days_until(config.PRIMARY_TRIP["out"])
+    days_left = stats.days_until(trip["out"])
 
     if pct is None:
         tone, verdict = "", "—"
@@ -325,7 +383,7 @@ def _verdict_html(series, price):
                 f"<div class='vstat-sub'>{html.escape(sub)}</div></div>")
 
     cells = [stat("Voči histórii", f"{pct:.0f}. percentil",
-                  f"{len(series)} meraní · min {min(values):.0f} €")]
+                  f"{_measurements(len(series))} · min {min(values):.0f} €")]
     if week:
         cells.append(stat("Za 7 dní", f"{min(week):.0f} – {max(week):.0f} €", "rozsah /os"))
     if change is not None:
@@ -349,24 +407,67 @@ def _persons_toggle_html():
             f"<div class='pp-note'>{html.escape(config.PERSONS_HINT)}</div>")
 
 
-def _primary_hero_html(rows):
-    """Zvýraznený náš let navrchu: fixný termín + cena/os + počítadlo osôb.
+def _header_dates():
+    """Hlavička nesmie tvrdiť jeden návrat, keď sa rozhodujeme medzi viacerými."""
+    options = _return_options()
+    out = date.fromisoformat(options[0]["out"])
+    rets = sorted({date.fromisoformat(o["ret"]) for o in options})
+    days = " alebo ".join(f"{d.day}.{d.month}." for d in rets)
+    return f"odlet {out.day}.{out.month}. · návrat {days}{out.year}"
 
-    Ukazuje VÝHRADNE cenu nášho termínu (nikdy nie najlacnejšiu naprieč mesiacom),
-    a má vlastný graf, aby sa dalo rozhodnúť bez pozerania na iné termíny nižšie.
+
+def _options_html(snaps):
+    """Porovnanie zvažovaných termínov vedľa seba.
+
+    Rozhodujeme sa MEDZI nimi, takže samotná cena hlavného termínu nestačí —
+    bez druhého čísla sa nedá povedať, či sa oplatí. Rozdiel uvádzame aj za celú
+    partiu s doplnkami; tam sa rozhoduje, nie na cene jednej letenky.
     """
-    series = _primary_trip_series(rows)
-    info = _primary_trip_now(rows)
-    if not info:
+    if len(snaps) < 2:
         return ""
-    t = config.PRIMARY_TRIP
+    n = _DEFAULT_PERSONS
+    best = snaps[0]["price"]
+    cards = []
+    for i, snap in enumerate(snaps):
+        t, price = snap["trip"], snap["price"]
+        diff = price - best
+        all_in = _all_in_total(price, n)
+        if i == 0:
+            note = "<span class='opt-tag'>lacnejšia možnosť</span>"
+        else:
+            note = (f"<span class='opt-diff'>+{diff:.0f} €/os "
+                    f"({diff * n:.0f} € za {n} os.)</span>")
+        cards.append(
+            f"<div class='opt{' opt-best' if i == 0 else ''}'>"
+            f"<div class='opt-head'>Návrat {_fmt_date(t['ret'])} · {_weekday(t['ret'])}</div>"
+            f"<div class='opt-price'>{price:.0f} €<span class='cmp-unit'> /os</span></div>"
+            f"<div class='opt-sub'>{_nights(t)} nocí · s doplnkami "
+            f"{all_in:.0f} € za {n} os.</div>"
+            f"<div class='opt-note'>{note}</div></div>")
+    return (f"<div class='opt-label'>Ktorý návrat kúpiť</div>"
+            f"<div class='opt-grid'>{''.join(cards)}</div>")
+
+
+def _primary_hero_html(rows):
+    """Zvýraznený hlavný termín navrchu: cena/os + počítadlo osôb + porovnanie.
+
+    Ukazuje VÝHRADNE ceny sledovaných termínov (nikdy nie najlacnejšiu naprieč
+    mesiacom) a má vlastný graf, aby sa dalo rozhodnúť bez posúvania nižšie.
+    Hlavný je ten, ktorý je práve lacnejší — o ňom sa reálne rozhoduje.
+    """
+    snaps = _decision_options(rows)
+    if not snaps:
+        return ""
+    main = snaps[0]
+    t, series = main["trip"], main["series"]
+    info = _trip_now(rows, t, series)
     pp, low = info["total"], info["low"]
 
     high = max(s["total"] for s in series)
     if high - low < 0.005:
         # cena sa ešte nikdy nepohla → žiadny zelený "kupuj teraz" signál
         low_html = (f"<div class='hero-low'>Cena sa zatiaľ nehla "
-                    f"({len(series)} meraní)</div>")
+                    f"({_measurements(len(series))})</div>")
     elif pp <= low + 0.005:
         low_html = ("<div class='hero-low hero-low-hit'>Teraz je najnižšie, čo sme videli"
                     f" · {low:.0f} €/os</div>"
@@ -375,7 +476,7 @@ def _primary_hero_html(rows):
         low_html = (f"<div class='hero-low'>Najnižšie doteraz: <b>{low:.0f} €/os</b>"
                     f" · teraz +{pp - low:.0f} €</div>")
 
-    chart = _chart_html(_primary_trip_fig(series), height="260px")
+    chart = _chart_html(_options_fig(snaps), height="260px")
 
     if _out_bought():
         paid = config.OUT_LEG_PAID_EUR
@@ -384,6 +485,9 @@ def _primary_hero_html(rows):
                     f"{_origin_from(t['origin'])} · {_fmt_date(t['ret'])}")
         sub = (f"{info['nights']} nocí · odlet {_fmt_date(t['out'])} už kúpený "
                f"za {paid:.0f} €/os")
+        if len(snaps) > 1:
+            # bez tohto vyzerá hlavná cena ako jediná možná, hoci je to voľba
+            sub += f" · práve lacnejšia z {len(snaps)} možností"
         # Reálna suma, nie len letenky: doplnky (batožina, fasttrack, miestenky)
         # zaplatíme na návrat znova, a práve tie robia rozdiel voči referencii.
         extras = getattr(config, "EXTRAS_PER_PERSON_PER_LEG_EUR", 0.0)
@@ -418,8 +522,9 @@ def _primary_hero_html(rows):
     <div class='hero-total js-total'>Spolu {_DEFAULT_PERSONS} os.: <b>{pp * _DEFAULT_PERSONS:.0f} €</b></div>
   </div>
   {low_html}
-  {_verdict_html(series, pp)}
+  {_verdict_html(series, pp, t)}
   {legs_html}
+  {_options_html(snaps)}
   <div class='hero-chart'>{chart}</div>
 </section>"""
 
@@ -453,7 +558,7 @@ def build_report_html(rows):
 <body>
 <div class='wrap'>
   <header>
-    <div class='eyebrow'>Ryanair price tracker · 6.–13.9.2026</div>
+    <div class='eyebrow'>Ryanair price tracker · {html.escape(_header_dates())}</div>
     <h1>Budapešť → Lefkada</h1>
     <div class='updated'>Posledná aktualizácia: {html.escape(_fmt_dt(updated))} {_age_html(updated)}</div>
   </header>

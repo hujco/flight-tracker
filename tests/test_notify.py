@@ -482,3 +482,164 @@ def test_format_message_spike_says_buy_now():
     assert "posledná šanca" in msg
     assert "Do odletu 31 dní" in msg
     assert "len pár sedadiel" not in msg      # pri raste je hint o sedadlach nezmysel
+
+
+# --- dva mozne navraty (13.9. vs 15.9.) --------------------------------------
+#
+# Odlet je kupeny a pre obe moznosti rovnaky, takze rozhodovanie je "ktory navrat".
+# Kazda moznost ma vlastnu historiu: 15.9. zacina od nuly a zlucena seria by skok
+# 179 -> 101 citala ako prepad ceny, hoci je to iny let.
+
+_OPT_13 = {"origin": "BUD", "destination": "PVK", "out": "2026-09-06", "ret": "2026-09-13"}
+_OPT_15 = {"origin": "BUD", "destination": "PVK", "out": "2026-09-06", "ret": "2026-09-15"}
+
+
+def _two_options(monkeypatch):
+    monkeypatch.setattr(notify.config, "RETURN_OPTIONS", [_OPT_13, _OPT_15])
+    monkeypatch.setattr(notify.config, "OUT_LEG_BOUGHT", True)
+    monkeypatch.setattr(notify.config, "ALERT_TARGET_RET_EUR", 134.0)
+
+
+def _both_rets(ts, out_p, ret13, ret15=None):
+    rows = [_row(ts, "PVK", "OUT", "2026-09-06", out_p, origin="BUD"),
+            _row(ts, "PVK", "RET", "2026-09-13", ret13, origin="BUD")]
+    if ret15 is not None:
+        rows.append(_row(ts, "PVK", "RET", "2026-09-15", ret15, origin="BUD"))
+    return rows
+
+
+def test_option_snapshots_rank_cheapest_first(monkeypatch):
+    _two_options(monkeypatch)
+    rows = _both_rets("2026-08-15T06:00", 46.0, 179.0, 101.0)
+    snaps = notify.option_snapshots(rows)
+    assert [s["trip"]["ret"] for s in snaps] == ["2026-09-15", "2026-09-13"]
+    assert snaps[0]["price"] == 101.0
+
+
+def test_option_without_data_is_skipped(monkeypatch):
+    # 15.9. sa este ani raz nezozbieral -> sprava sa musi tvarit ako predtym,
+    # nie spadnut ani hlasit termin bez ceny
+    _two_options(monkeypatch)
+    rows = _both_rets("2026-08-15T06:00", 46.0, 179.0)
+    snaps = notify.option_snapshots(rows)
+    assert [s["trip"]["ret"] for s in snaps] == ["2026-09-13"]
+
+
+def test_signals_are_computed_per_return_date(monkeypatch):
+    # 13.9. stupa (ziadny nakupny signal), 15.9. je pod cielom -> target na 15.9.
+    _two_options(monkeypatch)
+    rows = (_both_rets("2026-08-13T06:00", 46.0, 160.0, 130.0)
+            + _both_rets("2026-08-15T06:00", 46.0, 179.0, 101.0))
+    snaps = notify.option_snapshots(rows)
+    by_ret = {s["trip"]["ret"]: [x["kind"] for x in s["signals"]] for s in snaps}
+    assert by_ret["2026-09-15"][0] == "target"     # 101 <= 134
+    assert "target" not in by_ret["2026-09-13"]    # 179 je vysoko nad cielom
+    assert "window_low" not in by_ret["2026-09-13"]  # a este aj stupol
+
+
+def test_cheaper_option_alerts_first(monkeypatch):
+    _two_options(monkeypatch)
+    rows = (_both_rets("2026-08-13T06:00", 46.0, 160.0, 130.0)
+            + _both_rets("2026-08-15T06:00", 46.0, 179.0, 101.0))
+    monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
+    s = _CaptureSession()
+    ok, msg = notify.maybe_notify(rows, session=s, now="2026-08-15T06:05")
+    assert ok is True and "15.09.2026" in s.sent[0]
+    assert "101 €/os" in s.sent[0]
+
+
+def test_message_names_the_other_return_option(monkeypatch):
+    # Rozhodujeme sa MEDZI terminmi -> sprava musi povedat, co je ta druha moznost
+    _two_options(monkeypatch)
+    rows = (_both_rets("2026-08-13T06:00", 46.0, 160.0, 130.0)
+            + _both_rets("2026-08-15T06:00", 46.0, 179.0, 101.0))
+    monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
+    s = _CaptureSession()
+    notify.maybe_notify(rows, session=s, now="2026-08-15T06:05")
+    text = s.sent[0]
+    assert "13.09.2026" in text and "179 €/os" in text
+    assert "78 €/os" in text                     # rozdiel na osobu
+    assert f"{78 * notify.config.PERSONS:.0f} €" in text   # a co to robi s penazenkou
+
+
+def test_cooldown_is_per_return_date(monkeypatch):
+    # Alert na jeden termin nesmie umlcat alert na druhy — su to nezavisle nakupy.
+    import sqlite3
+    from tracker import db
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    db.init_db(conn)
+    _two_options(monkeypatch)
+    rows = (_both_rets("2026-08-13T06:00", 46.0, 160.0, 130.0)
+            + _both_rets("2026-08-15T06:00", 46.0, 133.0, 101.0))   # obe pod cielom
+    monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
+    s = _CaptureSession()
+    ok1, msg1 = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-15T06:05")
+    assert ok1 is True and "2026-09-15" in msg1        # lacnejsi ide prvy
+    ok2, msg2 = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-15T06:35")
+    assert ok2 is True and "2026-09-15" not in msg2    # ten uz je v cooldowne
+    assert "2026-09-13" in msg2 and "133 €/os" in s.sent[1]
+
+
+def test_digest_covers_both_return_options(monkeypatch):
+    import sqlite3
+    from tracker import db
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    db.init_db(conn)
+    _two_options(monkeypatch)
+    # obe vysoko nad cielom a ploche -> ziadny signal, posle sa ranny suhrn
+    rows = (_both_rets("2026-08-14T06:00", 46.0, 200.0, 180.0)
+            + _both_rets("2026-08-15T05:10", 46.0, 200.0, 180.0))
+    monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
+    s = _CaptureSession()
+    ok, msg = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-15T05:10+00:00")
+    assert ok is True and "digest" in msg
+    text = s.sent[0]
+    assert "Denný súhrn" in text
+    assert "15.09.2026" in text and "180 €/os" in text     # lacnejsi ako hlavny
+    assert "13.09.2026" in text and "200 €/os" in text     # druhy ako porovnanie
+    # jedna sprava, nie jedna na termin
+    assert len(s.sent) == 1
+
+
+def test_digest_alert_kind_stays_plain_digest(monkeypatch):
+    # _morning_due hlada kind == "digest" -> nesmie sa mu prilepit datum,
+    # inak by ranny suhrn chodil kazdy beh
+    import sqlite3
+    from tracker import db
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    db.init_db(conn)
+    _two_options(monkeypatch)
+    rows = (_both_rets("2026-08-14T06:00", 46.0, 200.0, 180.0)
+            + _both_rets("2026-08-15T05:10", 46.0, 200.0, 180.0))
+    monkeypatch.setenv("TELEGRAM_TOKEN", "TOK")
+    s = _CaptureSession()
+    notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-15T05:10+00:00")
+    assert db.last_alert(conn, "digest") is not None
+    ok2, _ = notify.maybe_notify(rows, session=s, conn=conn, now="2026-08-15T09:00+00:00")
+    assert ok2 is False and len(s.sent) == 1
+
+
+def test_digest_does_not_fake_statistics_for_a_fresh_option(monkeypatch):
+    # Novy termin ma jedine meranie: "lacnejsie nez 0 % z 1 merani" a "za 7 dni
+    # 101 - 101" nie su cisla, ale sum. Povedz rovno, ze historia sa este zbiera.
+    _two_options(monkeypatch)
+    snaps = notify.option_snapshots(
+        _both_rets("2026-08-15T06:00", 46.0, 179.0, 101.0))
+    info = notify.build_digest_multi(snaps, today=date(2026, 8, 15))
+    msg = notify._format_digest(info, "Lefkada", "BUD", 134.0, "http://x")
+    assert "Zbieram históriu (1 meranie)" in msg
+    assert "0 %" not in msg and "Za 7 dní" not in msg
+    assert "101 €/os" in msg and "179 €/os" in msg     # ceny naopak chybat nesmu
+
+
+def test_digest_keeps_statistics_once_history_exists(monkeypatch):
+    _two_options(monkeypatch)
+    rows = (_both_rets("2026-08-13T06:00", 46.0, 160.0, 130.0)
+            + _both_rets("2026-08-15T06:00", 46.0, 179.0, 101.0))
+    snaps = notify.option_snapshots(rows)
+    info = notify.build_digest_multi(snaps, today=date(2026, 8, 15))
+    msg = notify._format_digest(info, "Lefkada", "BUD", 134.0, "http://x")
+    assert "Za 7 dní: 101 – 130" in msg and "Zbieram históriu" not in msg

@@ -1,8 +1,25 @@
 # Ryanair Price Tracker (BUD ↔ PVK)
 
-Sleduje každé 2 hodiny cenu **jedného fixného letu** Ryanair
-**Budapešť (BUD) ↔ Lefkada (PVK), 6.–13. 9. 2026**, ukladá históriu do SQLite
+Sleduje každé 2 hodiny cenu nášho letu Ryanair **Budapešť (BUD) ↔ Lefkada (PVK)**,
+odlet **6. 9. 2026**, návrat **13. 9. alebo 15. 9. 2026**, ukladá históriu do SQLite
 a generuje `report.html`. Bez LLM.
+
+## Dva možné návraty
+Odlet 6. 9. je kúpený a pre obe možnosti rovnaký, takže sa rozhodujeme výhradne
+o návrate. PVK→BUD lieta **v nedeľu a v utorok**, preto „o dva dni neskôr"
+znamená utorok 15. 9. (14. ani 16. 9. spoj neexistuje).
+
+Dva dni navyše na Lefkade nie sú náklad navyše: do Budapešti ideme až v deň
+odletu, takže odpadne tamojšie ubytovanie. Porovnávame preto **holé letenky** —
+kým nie je známa cena predĺženia ubytovania, prirátať ju by znamenalo hádať.
+
+Každý termín má **vlastnú históriu a vlastné signály**. Zámerne sa nezlievajú do
+jednej „najlacnejšej" série: 15. 9. začína bez histórie, takže spoločná séria by
+skok zo 179 na 101 € čítala ako prepad ceny, hoci je to iný let. Report aj alerty
+navrchu ukazujú **ten práve lacnejší** a vždy uvedú, čo robí tá druhá možnosť.
+
+Termíny sú v `RETURN_OPTIONS` (`tracker/config.py`); `BUD_TRIPS` sa z nich odvodí,
+takže pridanie termínu = jeden riadok a zber ho začne chytať sám.
 
 > Viedeň je vypnutá (`DESTINATIONS = []`). Ubytovanie je zaplatené na fixný
 > termín 6. 9. a VIE↔PVK lieta stredy a soboty — na náš termín teda spoj
@@ -18,10 +35,11 @@ a generuje `report.html`. Bez LLM.
 
 Vytvorí/aktualizuje `prices.db` a `report.html`. Report otvor v prehliadači.
 
-Report je jedna karta o našom lete: cena/os, prepínač počtu osôb, verdikt
-(percentil voči histórii), rozsah za 7 dní, zmena za 24 h, dní do odletu a graf
-vývoja. Layout je responzívny — overené pri 320 / 390 / 768 px bez vodorovného
-scrollu.
+Report je jedna karta o našom lete: cena/os (toho **práve lacnejšieho** návratu),
+prepínač počtu osôb, verdikt (percentil voči histórii), rozsah za 7 dní, zmena za
+24 h, dní do odletu, porovnanie oboch termínov vedľa seba a graf s čiarou na
+termín. Layout je responzívny — overené pri 320 / 390 / 768 px bez vodorovného
+scrollu; porovnanie termínov používa rovnaký `auto-fit` grid ako KPI karty.
 
 ## Pravidelné spúšťanie — GitHub Actions + Pages (primárne)
 Workflow `.github/workflows/track.yml` beží každé 2 hodiny (cron, UTC):
@@ -72,12 +90,23 @@ Pošle sa **prvý signál, ktorý prejde cooldownom** (`ALERT_COOLDOWN_HOURS`), 
 jedno meranie nikdy nepošle dve správy. Keď je signál v cooldowne, padá sa na
 ďalší v poradí — nový nižší prepad sa teda neutopí.
 
+Pri dvoch termínoch sa signály počítajú pre každý zvlášť a radia sa **najprv podľa
+urgentnosti, až potom podľa toho, ktorý je lacnejší** — inak by „príležitosť" na
+lacnejšom termíne predbehla „kupuj" na tom druhom. Cooldown je **per termín**
+(kľúč `target@2026-09-15`), lebo alert na jeden dátum nesmie umlčať ten druhý.
+Každá správa uvádza aj druhú možnosť vrátane rozdielu za celú partiu.
+
 Okno pre `window_low` sa **skracuje na `ALERT_WINDOW_DAYS_NEAR` (10 dní)**, keď je
 do odletu menej než `NEAR_DEPARTURE_DAYS` (30) — vtedy sa už čakať nedá.
 
 > Pôvodne bola jediná podmienka „nové **absolútne** minimum A ZÁROVEŇ ≤ cieľ". Tá sa
 > po zásahu historického minima (126,57 € dňa 13. 7.) natrvalo zamkla a alert prestal
 > chodiť — aj výborná cena 135 € by už neposlala nič. Preto sú signály rozbité.
+
+Ranný súhrn je **jedna správa za oba termíny** (rozhodujeme sa medzi nimi, takže
+patria vedľa seba). Pri termíne s jediným meraním sa percentil ani rozsah za 7 dní
+neposielajú — „lacnejšie než 0 % z 1 merania" nie je číslo, ale šum; namiesto toho
+správa povie, že sa história ešte zbiera.
 
 `digest` chodí **každé ráno**: prvý beh v daný deň po `DIGEST_HOUR_LOCAL` (7:00
 nášho času) pošle prehľad — aktuálna cena, rozsah za 7 dní, zmena za 24 h,
@@ -110,6 +139,7 @@ Cieľovú cenu zmeníš v `tracker/config.py` (`ALERT_TARGET_EUR`).
 Destinácie a okno v `tracker/config.py` (`ORIGIN`, `DESTINATIONS`, `YEAR`, `MONTH`,
 `STAY_PRESETS`, `PERSONS`, `EXTRAS_EUR`, `INCLUDE_EXTRAS`, `REFERENCE_PRICE_EUR`,
 `ALERT_TARGET_EUR`). Pridanie destinácie = jeden záznam `{code, label}` v `DESTINATIONS`.
+Pridanie/odobranie zvažovaného termínu = jeden záznam v `RETURN_OPTIONS`.
 
 ## Testy
     .venv/bin/python -m pytest -v

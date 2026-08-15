@@ -82,3 +82,19 @@ def test_collect_once_bud_fixed_trips_tagged_bud():
     # fetchli sa len fixné dni (6.9 OUT, 13.9 RET) — nie celý mesiac
     fetched = {c["outboundDepartureDateFrom"] for c in sess.calls}
     assert fetched == {"2026-09-06", "2026-09-13"}
+
+
+def test_collect_covers_every_return_option():
+    # Zbierame oba zvazovane navraty; odletovy den je spolocny, takze pribudne
+    # presne jeden request navyse, nie cely dalsi itinerar.
+    from tracker import config
+    conn = make_conn()
+    s = DaySession([])
+    collect.collect_once(conn, "2026-08-15T06:00", destinations=[], origin="VIE",
+                         year=2026, month=9, session=s,
+                         bud_origin="BUD", bud_destinations=[{"code": "PVK", "label": "Lefkada"}],
+                         bud_trips=config.BUD_TRIPS)
+    days = [p["outboundDepartureDateFrom"] for p in s.calls]
+    assert days.count("2026-09-06") == 1                 # odlet je pre obe rovnaky
+    assert "2026-09-13" in days and "2026-09-15" in days
+    assert len(days) == 3
